@@ -63,6 +63,36 @@ export async function getEntryForDate(userId, fecha) {
   return { entry, reglaKeys: items.map((i) => i.regla_key), evidenciaPorRegla };
 }
 
+// Detalle de solo lectura de un día ya guardado: qué se marcó y qué
+// evidencia se subió para cada item. Para el drill-down del historial.
+export async function getDayDetail(entryId) {
+  const { data: items, error: itemsError } = await supabase
+    .from('entry_items')
+    .select('regla_key, categoria, puntos, rules(descripcion)')
+    .eq('entry_id', entryId);
+  if (itemsError) throw itemsError;
+
+  const { data: evidencia, error: evError } = await supabase
+    .from('evidence')
+    .select('id, regla_key, foto_url')
+    .eq('entry_id', entryId);
+  if (evError) throw evError;
+
+  const fotosPorRegla = {};
+  for (const e of evidencia) {
+    if (!e.regla_key) continue;
+    (fotosPorRegla[e.regla_key] ??= []).push({ id: e.id, foto_url: e.foto_url });
+  }
+
+  return items.map((i) => ({
+    regla_key: i.regla_key,
+    categoria: i.categoria,
+    puntos: i.puntos,
+    descripcion: i.rules?.descripcion ?? i.regla_key,
+    fotos: fotosPorRegla[i.regla_key] ?? [],
+  }));
+}
+
 // Cuántos OTROS días de la semana ya usaron la comida libre (máx 1/semana)
 export async function countComidaLibreEnSemana(userId, fecha, excludeEntryId = null) {
   const { desde, hasta } = semanaDe(fecha);

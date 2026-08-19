@@ -145,10 +145,11 @@ grasolimpiadas/
         ├── entries/
         │   ├── pointsEngine.js   ← calcularNeto() — función pura, cap +15, comodín, comida libre
         │   ├── rulesApi.js       ← listCheckableRules() (excluye automatica=true)
-        │   ├── entriesApi.js     ← getEntryForDate (incluye evidenciaPorRegla), saveDailyEntry (fotosPorRegla), countComidaLibreEnSemana, ajustarComodines
+        │   ├── entriesApi.js     ← getEntryForDate (incluye evidenciaPorRegla), saveDailyEntry (fotosPorRegla), getDayDetail (solo lectura), countComidaLibreEnSemana, ajustarComodines
         │   ├── historyApi.js     ← getHistoryForUser (historial personal)
         │   ├── DailyEntry.jsx    ← checklist por categoría + comodín + comida libre + evidencia obligatoria por item de suma (mín. 1 foto, bloquea guardado si falta)
-        │   └── History.jsx      ← historial personal: días registrados + total acumulado
+        │   ├── History.jsx      ← historial personal: días registrados + total acumulado; cada día abre DayDetail
+        │   └── DayDetail.jsx    ← detalle de solo lectura de un día pasado: qué se marcó + evidencia subida
         └── ranking/
             ├── rankingApi.js     ← getRanking() (lee de la vista v_ranking)
             └── Ranking.jsx       ← leaderboard público, resalta el último lugar
@@ -160,6 +161,8 @@ grasolimpiadas/
 
 **Ajuste post-deploy (evidencia obligatoria):** ya con la app en producción (https://grasolimpiadas.vercel.app), el dueño pidió atar la evidencia fotográfica a cada item marcado en vez de una foto genérica opcional por día. Se implementó sin cambios de esquema (`evidence.regla_key` ya existía) — solo cambios de app: `entriesApi.js` y `DailyEntry.jsx`. Reglas: obligatorio (mín. 1 foto) para todo `tipo = 'suma'`; nunca para `tipo = 'resta'` (incluida Penalidades); bloquea el guardado si falta. Al implementar esto se encontró y corrigió un bug real (no solo de las pruebas automatizadas): `e.target.files` es una referencia viva al input — limpiar `input.value = ''` justo después de leerlo (para poder re-seleccionar) vaciaba también el array que se pensaba guardar en el estado, si la lectura ocurría de forma diferida. Fix: convertir a array (`Array.from(...)`) ANTES de limpiar el input, no dentro del callback de `setState`.
 
+**Ajuste post-deploy (drill-down del historial):** cada día del historial ahora es clickeable y abre `DayDetail.jsx`, un resumen de solo lectura de exactamente lo que se marcó ese día y la evidencia subida (fotos con link a tamaño completo). Nueva función `getDayDetail(entryId)` en `entriesApi.js`, sin cambios de esquema.
+
 Lo que ya funciona:
 - Selección de perfil sin contraseña, persistida en localStorage.
 - CRUD de participantes con soft-delete y reincorporación.
@@ -169,10 +172,10 @@ Lo que ya funciona:
 - Comida libre: máx 1 por semana (lunes a domingo), decisión de UX tomada aquí: exime del cómputo las restas de categoría "Alimentación" marcadas ese día (quedan registradas para el historial, pero no penalizan el neto).
 - Evidencia fotográfica obligatoria por item de suma marcado (mín. 1 foto cada uno; las restas no la piden). Sube a Storage (`evidence`) atada a `entry_id` + `regla_key`, y bloquea el guardado del día si algún item de suma marcado no tiene foto. Requiere correr `03_storage.sql`.
 - Ranking público (`v_ranking`): total acumulado del reto por usuario activo, resalta a quien(es) están en último lugar (empates incluidos). Requiere correr `04_ranking_view.sql`.
-- Historial personal: lista de días registrados del usuario actual (más reciente primero), con el neto de cada uno, etiquetas de comodín/comida libre usados, y el total acumulado.
+- Historial personal: lista de días registrados del usuario actual (más reciente primero), con el neto de cada uno, etiquetas de comodín/comida libre usados, y el total acumulado. Cada día es clickeable y abre un detalle de solo lectura (`DayDetail.jsx`) con lo marcado ese día y sus fotos de evidencia (con link a tamaño completo).
 - Penalidades manuales (día perdido, finde destructivo, no registré el día): checkboxes normales del checklist, ya no automáticas. Requiere correr `05_penalidades_manual.sql` si la DB ya tenía el catálogo viejo.
 - Navegación por tabs (Hoy / Ranking / Historial) dentro de `App.jsx`, sin librería de routing.
-- `npm run build` pasa limpio. Fases 1–4 probadas end-to-end en navegador contra Supabase real (checklist, cap de puntos, comodín con recálculo de contador y persistencia, comida libre, ranking con resaltado de último, historial, categoría "Penalidades", evidencia obligatoria bloqueando el guardado y persistiendo tras recargar).
+- `npm run build` pasa limpio. Fases 1–4 probadas end-to-end en navegador contra Supabase real (checklist, cap de puntos, comodín con recálculo de contador y persistencia, comida libre, ranking con resaltado de último, historial, categoría "Penalidades", evidencia obligatoria bloqueando el guardado y persistiendo tras recargar, drill-down del historial mostrando item + foto con URL pública válida de Storage).
 
 Convenciones observadas en el código actual (mantenerlas):
 - JS plano, sin TypeScript.

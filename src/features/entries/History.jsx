@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getHistoryForUser } from './historyApi';
+import DayDetail from './DayDetail';
 
 // ============================================================
 // Historial personal (Fase 3).
 // Días registrados del usuario actual, con el neto de cada uno
-// y el acumulado total.
+// y el acumulado total. Cada día abre un detalle de solo lectura
+// con lo marcado y la evidencia subida (ver DayDetail.jsx).
 // ============================================================
 
 function formatFecha(fechaISO) {
@@ -16,6 +18,7 @@ export default function History({ profile }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [seleccionado, setSeleccionado] = useState(null); // { id, fecha }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,6 +36,16 @@ export default function History({ profile }) {
   useEffect(() => { load(); }, [load]);
 
   const totalAcumulado = entries.reduce((s, e) => s + e.puntos_netos, 0);
+
+  if (seleccionado) {
+    return (
+      <DayDetail
+        entryId={seleccionado.id}
+        fecha={seleccionado.fecha}
+        onBack={() => setSeleccionado(null)}
+      />
+    );
+  }
 
   return (
     <div>
@@ -55,10 +68,14 @@ export default function History({ profile }) {
           )}
 
           {entries.map((e) => (
-            <div
+            <button
               key={e.id}
               className="card"
-              style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, padding: '12px 16px' }}
+              onClick={() => setSeleccionado({ id: e.id, fecha: e.fecha })}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, padding: '12px 16px',
+                width: '100%', textAlign: 'left',
+              }}
             >
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 14, textTransform: 'capitalize' }}>{formatFecha(e.fecha)}</div>
@@ -76,7 +93,8 @@ export default function History({ profile }) {
               }}>
                 {e.puntos_netos > 0 ? `+${e.puntos_netos}` : e.puntos_netos}
               </span>
-            </div>
+              <span className="muted" style={{ fontSize: 16 }}>›</span>
+            </button>
           ))}
         </>
       )}
