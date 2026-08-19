@@ -35,6 +35,7 @@ Sin librerías de estado ni de routing por ahora — el switch de vistas es un `
 8. **Penalidades: manuales, no automáticas (revisado en Fase 4).** El plan original calculaba "día perdido", "fin de semana destructivo" y "no registrar" por umbral vía job/pg_cron. Se descartó — Supabase no tenía la extensión `pg_cron` disponible sin fricción, y el dueño decidió no complicar la infra por esto. Las tres pasaron a ser checkboxes manuales más, agrupadas en la categoría **"Penalidades"** (junto a Actividad, Disciplina, Hábitos, etc.): "Día perdido" (-6), "Fin de semana destructivo" (-8), "No registré el día" (-3). El usuario las marca por honor system, igual que el resto del checklist — no hay detección automática de umbral ni de días sin abrir la app.
 9. **"Trampa/mentir" (-10) del reglamento original quedó FUERA** del catálogo automático (incompatible con honor system sin validación). Si se quiere, se aplica manual — decisión pendiente del dueño.
 10. **Ranking: total del reto, no semanal.** Suma acumulada de `puntos_netos` desde el inicio, sin resetear por semana (decisión del dueño, Fase 3).
+11. **Registro incremental, no por lote (revisado post-deploy).** El grupo no marca todo el día de una — van subiendo evidencia según pasan las cosas (ejercicio en la mañana, almuerzo fit al mediodía, etc.). Se reemplazó el checklist-completo-y-un-botón-de-guardar por: elegir UNA actividad de un `<select>`, adjuntar foto si aplica, y registrarla — se guarda al toque, sin botón de "Guardar día". **Cada regla se puede registrar máximo 1 vez por día** (para sumas Y restas, sin excepción — decisión explícita del dueño al preguntar si las restas debían poder repetirse). El selector muestra las ya registradas ese día como opción deshabilitada, no las oculta.
 
 ### Decisiones abiertas menores (confirmar al implementar)
 - Al aplicar comodín retroactivo: se asume recálculo automático del ranking. Confirmar el alcance (¿solo ese día, o cascada sobre bonuses dependientes? No hay bonuses dependientes hoy, así que es directo.)
@@ -100,7 +101,7 @@ SQL completo en `supabase/01_schema.sql`. Resumen:
 - **users**: `id` (uuid), `nombre`, `avatar_url`, `comodines_restantes` (default 2), `activo` (bool, soft-delete), `created_at`
 - **rules**: `regla_key` (PK text), `categoria`, `descripcion`, `puntos` (smallint), `tipo` (`suma`|`resta`|`especial`), `automatica` (bool), `orden`
 - **daily_entries**: `id`, `user_id` (FK), `fecha` (date), `puntos_netos` (smallint), `comida_libre_usada` (bool), `comodin_usado` (bool), `created_at`, `updated_at`. Único por `(user_id, fecha)`.
-- **entry_items**: `id`, `entry_id` (FK), `regla_key` (FK), `categoria`, `puntos` (copiado de la regla al marcar), `created_at`
+- **entry_items**: `id`, `entry_id` (FK), `regla_key` (FK), `categoria`, `puntos` (copiado de la regla al marcar), `created_at`. Constraint única `(entry_id, regla_key)` (`supabase/07_entry_items_unique.sql`) — resguardo real de "una regla, una vez por día"; el frontend ya deshabilita la opción en el selector, pero esto lo garantiza a nivel de datos.
 - **evidence**: `id`, `entry_id` (FK), `regla_key` (FK, nullable), `foto_url`, `created_at`
 
 Notas:
@@ -129,7 +130,8 @@ grasolimpiadas/
 │   ├── 03_storage.sql            ← correr tercero (bucket "evidence" + policies)
 │   ├── 04_ranking_view.sql       ← correr cuarto (vista v_ranking)
 │   ├── 05_penalidades_manual.sql ← correr quinto (migración: pasa Día perdido / Finde destructivo / No registrar a manuales — solo si tu DB ya tenía el seed viejo)
-│   └── 06_avatars_storage.sql    ← correr sexto (bucket "avatars" + policies)
+│   ├── 06_avatars_storage.sql    ← correr sexto (bucket "avatars" + policies)
+│   └── 07_entry_items_unique.sql ← correr séptimo (constraint única entry_id+regla_key)
 └── src/
     ├── main.jsx
     ├── App.jsx                   ← orquesta vistas (select ↔ manage) + tabs (Hoy ↔ Ranking ↔ Historial) + fechaEditar (abrir "Hoy" en una fecha específica desde Historial)
@@ -147,11 +149,12 @@ grasolimpiadas/
         ├── entries/
         │   ├── pointsEngine.js   ← calcularNeto() — función pura, cap +15, comodín, comida libre
         │   ├── rulesApi.js       ← listCheckableRules() (excluye automatica=true)
-        │   ├── entriesApi.js     ← getEntryForDate (incluye evidenciaPorRegla), saveDailyEntry (fotosPorRegla), getDayDetail (solo lectura), countComidaLibreEnSemana, ajustarComodines
+        │   ├── entriesApi.js     ← modelo incremental: registrarActividad (una regla a la vez + fotos), actualizarComodin, actualizarComidaLibre, getEntryForDate, getDayDetail, countComidaLibreEnSemana, ajustarComodines. Ya NO existe saveDailyEntry (batch) — se recalcula el neto tras cada acción, no al final.
         │   ├── historyApi.js     ← getHistoryForUser (historial personal)
-        │   ├── DailyEntry.jsx    ← checklist por categoría + comodín + comida libre + evidencia obligatoria por item de suma (mín. 1 foto, bloquea guardado si falta); acepta `fechaInicial` para abrir directo en un día pasado
+        │   ├── ItemRow.jsx       ← fila compartida "descripción + puntos + fotos" (usada en DailyEntry y DayDetail)
+        │   ├── DailyEntry.jsx    ← selector de actividad + foto (obligatoria en suma, no en resta) + botón "Registrar" que guarda al toque; lista "ya registraste hoy"; comodín/comida libre se guardan al toque también. Acepta `fechaInicial` para abrir directo en un día pasado
         │   ├── History.jsx      ← historial personal: días registrados + total acumulado; selector "¿se te olvidó un día?" para ir a cualquier fecha pasada (con o sin entry); cada día abre DayDetail
-        │   └── DayDetail.jsx    ← detalle de solo lectura de un día pasado: qué se marcó + evidencia subida; botón "Editar este día" → vuelve a Hoy en esa fecha
+        │   └── DayDetail.jsx    ← detalle de solo lectura de un día pasado: qué se marcó + evidencia subida (vía ItemRow); botón "Editar este día" → vuelve a Hoy en esa fecha
         └── ranking/
             ├── rankingApi.js     ← getRanking() (lee de la vista v_ranking)
             └── Ranking.jsx       ← leaderboard público, resalta el último lugar
@@ -169,21 +172,23 @@ grasolimpiadas/
 
 **Ajuste post-deploy (penalidades retroactivas desde Historial):** el dueño pidió poder marcar cosas negativas (día perdido, fin de semana destructivo, no registrar) para días pasados directamente desde el Historial, incluso si ese día nunca se registró. No se construyó un formulario nuevo — se reusó `DailyEntry.jsx` completo (ya soportaba cualquier fecha pasada vía el selector de fecha): `App.jsx` ahora guarda `fechaEditar` y expone `irAEditarDia(fecha)`, que abre la pestaña "Hoy" con esa fecha precargada. `History.jsx` agregó un selector de fecha + botón "Ir" (para días con o sin entry) y `DayDetail.jsx` un botón "Editar este día" (para días que ya tienen entry). Sin cambios de esquema ni de `entriesApi.js` — el checklist, el motor de puntos y la validación de evidencia (que no aplica a Penalidades por ser `resta`) ya funcionaban igual para cualquier fecha.
 
+**Ajuste post-deploy (registro incremental — cambio grande de flujo):** viendo el comportamiento real del grupo, el dueño notó que la gente no marca todo el día de una — van subiendo evidencia de a pocos según pasa el día (ejercicio en la mañana, comida fit al mediodía, etc.). El checklist-completo-y-un-botón-de-"Guardar día" se reemplazó por un modelo incremental: `DailyEntry.jsx` ahora muestra un `<select>` (agrupado por categoría vía `<optgroup>`) para elegir UNA actividad, un input de foto si la regla es `tipo='suma'` (las restas no la piden), y un botón "Registrar" que persiste esa actividad al toque — sin paso de guardado final. Debajo, una sección "Ya registraste hoy" (usando el nuevo componente compartido `ItemRow.jsx`) muestra lo ya hecho ese día con sus fotos. **Cada regla se puede registrar máximo 1 vez por día** — el `<select>` muestra las ya registradas como `<option disabled>` (visibles pero no seleccionables, no ocultas, como pidió el dueño), y a nivel de datos hay una constraint única `(entry_id, regla_key)` en `entry_items` (`supabase/07_entry_items_unique.sql`) como resguardo real. Comodín y comida libre pasaron de ser toggles locales guardados junto al checklist a guardarse cada uno al toque (`actualizarComodin`, `actualizarComidaLibre` en `entriesApi.js`), recalculando el neto tras cada acción. Se eliminó `saveDailyEntry` (el batch "reemplaza todo") de `entriesApi.js` — ya no tenía caller. La foto "en el momento" no necesitó código nuevo: un `<input type="file" accept="image/*">` plano ya dispara el selector nativo de iOS/Android que ofrece cámara y galería — agregar el atributo `capture` habría forzado solo cámara, quitando la opción de elegir de la galería que también se pidió.
+
 Lo que ya funciona:
 - Selección de perfil sin contraseña, persistida en localStorage.
 - CRUD de participantes con soft-delete y reincorporación.
-- Registro diario: checklist agrupado por categoría (lee de `rules`, incluyendo ahora la categoría "Penalidades"), editable para el día actual y días pasados vía selector de fecha.
+- Registro diario incremental: elegir una actividad de un selector (agrupado por categoría, lee de `rules` incluyendo "Penalidades"), adjuntar foto si aplica, y "Registrar" — se guarda al toque, sin botón de guardado final. Cada regla máximo 1 vez por día (selector la deshabilita una vez registrada). Editable para el día actual y días pasados vía selector de fecha.
 - Motor de puntos (`calcularNeto`): cap +15 solo a positivos, negativos sin piso.
 - Comodín: máx 2 por persona (contador en `users.comodines_restantes`), aplicable a cualquier día (retroactivo), deja el neto del día en 0. El ranking histórico queda consistente automáticamente porque `puntos_netos` se guarda en 0 al momento de activarlo — no requiere un recálculo aparte (Fase 3 solo suma esa columna).
 - Comida libre: máx 1 por semana (lunes a domingo), decisión de UX tomada aquí: exime del cómputo las restas de categoría "Alimentación" marcadas ese día (quedan registradas para el historial, pero no penalizan el neto).
-- Evidencia fotográfica obligatoria por item de suma marcado (mín. 1 foto cada uno; las restas no la piden). Sube a Storage (`evidence`) atada a `entry_id` + `regla_key`, y bloquea el guardado del día si algún item de suma marcado no tiene foto. Requiere correr `03_storage.sql`.
+- Evidencia fotográfica obligatoria por item de suma marcado (mín. 1 foto cada uno; las restas no la piden). Sube a Storage (`evidence`) atada a `entry_id` + `regla_key`, y bloquea el botón "Registrar" si falta. Requiere correr `03_storage.sql`.
 - Ranking público (`v_ranking`): total acumulado del reto por usuario activo, resalta a quien(es) están en último lugar (empates incluidos). Requiere correr `04_ranking_view.sql`.
 - Historial personal: lista de días registrados del usuario actual (más reciente primero), con el neto de cada uno, etiquetas de comodín/comida libre usados, y el total acumulado. Cada día es clickeable y abre un detalle de solo lectura (`DayDetail.jsx`) con lo marcado ese día y sus fotos de evidencia (con link a tamaño completo).
 - Penalidades manuales (día perdido, finde destructivo, no registré el día): checkboxes normales del checklist, ya no automáticas. Requiere correr `05_penalidades_manual.sql` si la DB ya tenía el catálogo viejo.
 - Retroactivo desde Historial: selector de fecha + "Ir" (para días con o sin entry) y botón "Editar este día" en el detalle — ambos abren "Hoy" en esa fecha para marcar/editar cualquier cosa, típicamente Penalidades olvidadas.
 - Foto de perfil real por participante: botón de cámara en "Gestionar participantes" sube a Storage (`avatars`) y actualiza `users.avatar_url`; se muestra en las 4 pantallas que renderizan avatares (selección de perfil, gestión, header de "Hoy", Ranking). Requiere correr `06_avatars_storage.sql`.
 - Navegación por tabs (Hoy / Ranking / Historial) dentro de `App.jsx`, sin librería de routing.
-- `npm run build` pasa limpio. Fases 1–4 probadas end-to-end en navegador contra Supabase real (checklist, cap de puntos, comodín con recálculo de contador y persistencia, comida libre, ranking con resaltado de último, historial, categoría "Penalidades", evidencia obligatoria bloqueando el guardado y persistiendo tras recargar, drill-down del historial mostrando item + foto con URL pública válida de Storage, penalidad retroactiva agregada a un día sin entry previo desde Historial y editada de vuelta desde el detalle, foto de perfil subida y persistiendo en las 4 pantallas que la muestran).
+- `npm run build` pasa limpio. Fases 1–4 probadas end-to-end en navegador contra Supabase real (registro incremental actividad por actividad con neto actualizándose al toque, selector deshabilitando lo ya registrado, comodín/comida libre guardándose de inmediato, evidencia obligatoria bloqueando "Registrar", persistencia tras recargar, ranking con resaltado de último, drill-down del historial mostrando item + foto con URL pública válida de Storage, penalidad retroactiva agregada a un día sin entry previo desde Historial usando el mismo flujo incremental, foto de perfil subida y persistiendo en las 4 pantallas que la muestran).
 
 Convenciones observadas en el código actual (mantenerlas):
 - JS plano, sin TypeScript.
@@ -220,6 +225,8 @@ function calcularNeto(items, { comodinUsado }):
 
 Las penalidades "especiales" (día perdido, finde destructivo, no registrar) ya NO son un caso aparte: son checkboxes normales del catálogo (categoría "Penalidades"), así que esta función las trata igual que cualquier otro item marcado — no hay job ni recálculo especial (ver §3.8 sobre por qué se descartó lo automático). La comida libre marca una comida como exenta de penalización: se implementó como exención de las restas de categoría "Alimentación" marcadas ese día (ver `pointsEngine.js`).
 
+`calcularNeto` sigue siendo pura y no cambió con el registro incremental (§8, ajuste post-deploy) — lo que cambió es CUÁNDO se llama: antes una vez al guardar todo el día, ahora una vez por cada acción (registrar una actividad, o togglear comodín/comida libre), siempre recalculando desde TODOS los `entry_items` vigentes del entry, no solo el nuevo.
+
 ---
 
 ## 8. Roadmap
@@ -252,6 +259,15 @@ Las penalidades "especiales" (día perdido, finde destructivo, no registrar) ya 
 - Bug encontrado y corregido durante la implementación: limpiar el `<input type="file">` justo después de leerlo vaciaba la referencia viva a `FileList` antes de que el `setState` la procesara. Fix: `Array.from(...)` antes de limpiar el input. ✅
 - Probado en navegador: bloqueo funciona (lista los items sin foto), subir una foto desbloquea ese item, y la foto persiste tras recargar (viene de Supabase, no de memoria). ✅
 
+### Ajuste post-deploy — Registro incremental (COMPLETA)
+- Reemplazado el checklist-completo-y-un-botón-de-guardar por: elegir una actividad de un `<select>`, adjuntar foto si aplica (obligatoria en suma, no en resta), y "Registrar" — se persiste al toque. ✅
+- Cada regla máximo 1 vez por día: el `<select>` la muestra como `<option disabled>` (visible, no seleccionable) una vez registrada; constraint única `(entry_id, regla_key)` en `entry_items` como resguardo de datos (`supabase/07_entry_items_unique.sql`). ✅
+- Comodín y comida libre se guardan al toque (`actualizarComodin`, `actualizarComidaLibre`), ya no junto al checklist. ✅
+- `saveDailyEntry` (batch) eliminado de `entriesApi.js` — sin caller tras el cambio. `calcularNeto` se sigue llamando igual, solo que ahora una vez por acción en vez de una vez al guardar todo. ✅
+- Nuevo componente compartido `ItemRow.jsx` (descripción + puntos + fotos) usado tanto en la lista "ya registraste hoy" de `DailyEntry.jsx` como en `DayDetail.jsx`. ✅
+- La foto "en el momento" no necesitó código nuevo — el input de archivo plano ya dispara cámara+galería en móvil. ✅
+- Probado en navegador contra Supabase real: registrar con y sin foto, bloqueo sin foto en suma, selector deshabilitando lo ya registrado, comodín actualizando el contador y el neto al instante, persistencia tras recargar, y el flujo retroactivo desde Historial ("Editar este día") funcionando igual con el nuevo modelo. ✅
+
 ### Fase 5 — Pulido (opcional)
 - Copy con el tono de las Grasolimpiadas, animaciones, notificación del último lugar.
 
@@ -273,4 +289,4 @@ El reto se llama "Las Grasolimpiadas". Tono competitivo, burlón, motivacional-a
 
 ## Resumen para arrancar rápido
 
-Estás continuando una webapp React+Vite+Supabase de un reto fitness, ya en producción en https://grasolimpiadas.vercel.app. Fases 1 (auth por perfil + CRUD de participantes), 2 (registro diario + motor de puntos), 3 (ranking público + historial), 4 (penalidades manuales, sin jobs) y el ajuste post-deploy (evidencia fotográfica obligatoria por item de suma) están listos, compilan y probados end-to-end contra Supabase real. **Lo que queda es la Fase 5: pulido** (opcional — ver §8). Lee §3 (decisiones cerradas, incluye el cambio de evidencia obligatoria en §3.3), §4 (reglamento), §5 (modelo de datos) y §7 (motor de puntos) antes de escribir código. No reabras decisiones cerradas sin preguntar. Mantén JS plano, español en la UI, y la estructura por features.
+Estás continuando una webapp React+Vite+Supabase de un reto fitness, ya en producción en https://grasolimpiadas.vercel.app. Fases 1 (auth por perfil + CRUD de participantes), 2 (registro diario + motor de puntos), 3 (ranking público + historial), 4 (penalidades manuales, sin jobs) y varios ajustes post-deploy (evidencia obligatoria por item, drill-down del historial, foto de perfil, penalidades retroactivas, y el más grande: registro incremental — una actividad a la vez, se guarda al toque, máximo 1 vez por regla al día) están listos, compilan y probados end-to-end contra Supabase real. **Lo que queda es la Fase 5: pulido** (opcional — ver §8). Lee §3 (decisiones cerradas, incluye evidencia obligatoria en §3.3 y registro incremental en §3.11), §4 (reglamento), §5 (modelo de datos) y §7 (motor de puntos) antes de escribir código. No reabras decisiones cerradas sin preguntar. Mantén JS plano, español en la UI, y la estructura por features.

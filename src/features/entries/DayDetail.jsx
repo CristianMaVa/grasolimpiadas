@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getDayDetail } from './entriesApi';
+import ItemRow from './ItemRow';
 
 // ============================================================
 // Detalle de solo lectura de un día del historial: qué se marcó
@@ -62,28 +63,7 @@ export default function DayDetail({ entryId, fecha, onBack, onEditar }) {
       )}
 
       {!loading && items.map((item) => (
-        <div key={item.regla_key} className="card" style={{ marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 14, flex: 1 }}>{item.descripcion}</span>
-            <span style={{ fontWeight: 700, color: item.puntos > 0 ? 'var(--accent)' : 'var(--danger)' }}>
-              {item.puntos > 0 ? `+${item.puntos}` : item.puntos}
-            </span>
-          </div>
-
-          {item.fotos.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-              {item.fotos.map((f) => (
-                <a key={f.id} href={f.foto_url} target="_blank" rel="noreferrer">
-                  <img
-                    src={f.foto_url}
-                    alt={item.descripcion}
-                    style={{ width: 72, height: 72, borderRadius: 8, objectFit: 'cover', border: '1px solid var(--border)' }}
-                  />
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
+        <ItemRow key={item.regla_key} descripcion={item.descripcion} puntos={item.puntos} fotos={item.fotos} />
       ))}
     </div>
   );

@@ -3,9 +3,11 @@ import { calcularNeto } from './pointsEngine';
 
 // ============================================================
 // CRUD de registro diario.
-// Un daily_entry por (user_id, fecha); sus entry_items se
-// reemplazan por completo en cada guardado (más simple que un
-// diff, y el volumen por día es chico).
+// Modelo incremental: cada actividad se registra y persiste al
+// toque (no hay un botón único de "guardar todo el día"). Una
+// regla se registra como máximo una vez por día — ver
+// registrarActividad(). Los flags del día (comodín, comida
+// libre) también se guardan al toque.
 // ============================================================
 
 function lunesDe(fechaISO) {
@@ -28,9 +30,59 @@ export function semanaDe(fechaISO) {
   return { desde: aISO(lunes), hasta: aISO(domingo) };
 }
 
-// Carga el entry (si existe), las regla_key marcadas y la evidencia ya
-// subida, agrupada por regla_key — para saber qué items ya cumplen el
-// mínimo de fotos sin volver a pedirlas al reeditar un día.
+// Devuelve el daily_entry de user+fecha, creándolo (en blanco) si no existe.
+async function ensureEntry(userId, fecha) {
+  const { data: existente, error: selError } = await supabase
+    .from('daily_entries')
+    .select('id, comida_libre_usada, comodin_usado')
+    .eq('user_id', userId)
+    .eq('fecha', fecha)
+    .maybeSingle();
+  if (selError) throw selError;
+  if (existente) return existente;
+
+  const { data: creado, error: insError } = await supabase
+    .from('daily_entries')
+    .insert({ user_id: userId, fecha })
+    .select('id, comida_libre_usada, comodin_usado')
+    .single();
+  if (insError) throw insError;
+  return creado;
+}
+
+// Recalcula puntos_netos desde TODOS los entry_items vigentes + los
+// flags actuales del entry, y lo persiste. Se llama tras cada acción.
+async function recalcularNeto(entryId) {
+  const { data: entry, error: entryError } = await supabase
+    .from('daily_entries')
+    .select('comodin_usado, comida_libre_usada')
+    .eq('id', entryId)
+    .single();
+  if (entryError) throw entryError;
+
+  const { data: items, error: itemsError } = await supabase
+    .from('entry_items')
+    .select('categoria, puntos')
+    .eq('entry_id', entryId);
+  if (itemsError) throw itemsError;
+
+  const puntosNetos = calcularNeto(items, {
+    comodinUsado: entry.comodin_usado,
+    comidaLibreUsada: entry.comida_libre_usada,
+  });
+
+  const { error: updError } = await supabase
+    .from('daily_entries')
+    .update({ puntos_netos: puntosNetos })
+    .eq('id', entryId);
+  if (updError) throw updError;
+
+  return puntosNetos;
+}
+
+// Carga el entry (si existe), las regla_key ya registradas y la
+// evidencia ya subida, agrupada por regla_key — para saber qué
+// actividades ya están hechas hoy y no ofrecerlas de nuevo.
 export async function getEntryForDate(userId, fecha) {
   const { data: entry, error } = await supabase
     .from('daily_entries')
@@ -108,63 +160,53 @@ export async function countComidaLibreEnSemana(userId, fecha, excludeEntryId = n
   return data.filter((e) => e.id !== excludeEntryId).length;
 }
 
-// Guarda (crea o actualiza) el día completo: entry + items + evidencia
-// nueva por regla. `reglas` es el catálogo completo (para copiar
-// categoria/puntos a los items). `fotosPorRegla` es { regla_key: File[] }
-// — solo las fotos nuevas seleccionadas en esta sesión de edición; la
-// evidencia ya subida en guardados anteriores no se toca.
-export async function saveDailyEntry({
-  userId, fecha, reglas, reglaKeysMarcadas, comodinUsado, comidaLibreUsada, fotosPorRegla,
-}) {
-  const { data: entry, error: upsertError } = await supabase
-    .from('daily_entries')
-    .upsert(
-      { user_id: userId, fecha, comida_libre_usada: comidaLibreUsada, comodin_usado: comodinUsado },
-      { onConflict: 'user_id,fecha' }
-    )
-    .select()
-    .single();
-  if (upsertError) throw upsertError;
+// Registra UNA actividad para user+fecha: crea el entry si no existía,
+// inserta el entry_item, sube las fotos (si hay) atadas a esa regla, y
+// recalcula el neto. Falla si la regla ya estaba registrada ese día
+// (constraint única en entry_items) — el caller debe evitar ofrecerla
+// de nuevo en el selector, pero esto es el resguardo real.
+export async function registrarActividad({ userId, fecha, regla, fotos }) {
+  const entry = await ensureEntry(userId, fecha);
 
-  const { error: delError } = await supabase.from('entry_items').delete().eq('entry_id', entry.id);
-  if (delError) throw delError;
+  const { error: insError } = await supabase
+    .from('entry_items')
+    .insert({ entry_id: entry.id, regla_key: regla.regla_key, categoria: regla.categoria, puntos: regla.puntos });
+  if (insError) throw insError;
 
-  const items = reglas
-    .filter((r) => reglaKeysMarcadas.includes(r.regla_key))
-    .map((r) => ({ entry_id: entry.id, regla_key: r.regla_key, categoria: r.categoria, puntos: r.puntos }));
+  for (let i = 0; i < (fotos?.length ?? 0); i++) {
+    const file = fotos[i];
+    const ext = file.name.split('.').pop();
+    const path = `${userId}/${fecha}-${regla.regla_key}-${Date.now()}-${i}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from('evidence').upload(path, file);
+    if (uploadError) throw uploadError;
 
-  if (items.length > 0) {
-    const { error: insError } = await supabase.from('entry_items').insert(items);
-    if (insError) throw insError;
+    const { data: pub } = supabase.storage.from('evidence').getPublicUrl(path);
+    const { error: evError } = await supabase
+      .from('evidence')
+      .insert({ entry_id: entry.id, regla_key: regla.regla_key, foto_url: pub.publicUrl });
+    if (evError) throw evError;
   }
 
-  const puntosNetos = calcularNeto(items, { comodinUsado, comidaLibreUsada });
+  const puntosNetos = await recalcularNeto(entry.id);
+  return { entryId: entry.id, puntosNetos };
+}
 
-  const { data: entryFinal, error: updError } = await supabase
-    .from('daily_entries')
-    .update({ puntos_netos: puntosNetos })
-    .eq('id', entry.id)
-    .select()
-    .single();
-  if (updError) throw updError;
+// Activa/desactiva el comodín del día (crea el entry si no existía).
+export async function actualizarComodin(userId, fecha, valor) {
+  const entry = await ensureEntry(userId, fecha);
+  const { error } = await supabase.from('daily_entries').update({ comodin_usado: valor }).eq('id', entry.id);
+  if (error) throw error;
+  const puntosNetos = await recalcularNeto(entry.id);
+  return { entryId: entry.id, puntosNetos };
+}
 
-  for (const [reglaKey, files] of Object.entries(fotosPorRegla || {})) {
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const ext = file.name.split('.').pop();
-      const path = `${userId}/${fecha}-${reglaKey}-${Date.now()}-${i}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from('evidence').upload(path, file);
-      if (uploadError) throw uploadError;
-
-      const { data: pub } = supabase.storage.from('evidence').getPublicUrl(path);
-      const { error: evError } = await supabase
-        .from('evidence')
-        .insert({ entry_id: entry.id, regla_key: reglaKey, foto_url: pub.publicUrl });
-      if (evError) throw evError;
-    }
-  }
-
-  return entryFinal;
+// Activa/desactiva la comida libre del día (crea el entry si no existía).
+export async function actualizarComidaLibre(userId, fecha, valor) {
+  const entry = await ensureEntry(userId, fecha);
+  const { error } = await supabase.from('daily_entries').update({ comida_libre_usada: valor }).eq('id', entry.id);
+  if (error) throw error;
+  const puntosNetos = await recalcularNeto(entry.id);
+  return { entryId: entry.id, puntosNetos };
 }
 
 // Ajusta comodines_restantes del usuario (+1 al desactivar, -1 al activar)
