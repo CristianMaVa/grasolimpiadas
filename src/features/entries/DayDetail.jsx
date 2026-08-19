@@ -11,7 +11,7 @@ function formatFecha(fechaISO) {
   return d.toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'long' });
 }
 
-export default function DayDetail({ entryId, fecha, onBack }) {
+export default function DayDetail({ entryId, fecha, onBack, onEditar }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -41,6 +41,16 @@ export default function DayDetail({ entryId, fecha, onBack }) {
         </button>
         <h1 style={{ fontSize: 17, margin: 0, textTransform: 'capitalize' }}>{formatFecha(fecha)}</h1>
       </div>
+
+      {onEditar && (
+        <button
+          className="btn btn-ghost btn-block"
+          style={{ marginBottom: 16 }}
+          onClick={() => onEditar(fecha)}
+        >
+          Editar este día
+        </button>
+      )}
 
       {loading && <p className="muted">Cargando…</p>}
       {error && <p style={{ color: 'var(--danger)', fontSize: 14 }}>{error}</p>}

@@ -23,6 +23,14 @@ export default function App() {
   const { profile, ready, selectProfile, clearProfile, updateProfile } = useProfile();
   const [view, setView] = useState('select'); // 'select' | 'manage'
   const [tab, setTab] = useState('hoy'); // 'hoy' | 'ranking' | 'historial'
+  const [fechaEditar, setFechaEditar] = useState(null); // fecha a abrir en "Hoy" al venir desde Historial
+
+  // Abre "Hoy" en una fecha específica (retroactivo: agregar/editar
+  // penalidades de un día pasado desde el Historial).
+  function irAEditarDia(fecha) {
+    setFechaEditar(fecha);
+    setTab('hoy');
+  }
 
   if (!ready) return null;
 
@@ -52,16 +60,16 @@ export default function App() {
               key={t.key}
               className={`btn ${tab === t.key ? 'btn-primary' : 'btn-ghost'}`}
               style={{ flex: 1, fontSize: 14 }}
-              onClick={() => setTab(t.key)}
+              onClick={() => { setTab(t.key); setFechaEditar(null); }}
             >
               {t.label}
             </button>
           ))}
         </div>
 
-        {tab === 'hoy' && <DailyEntry profile={profile} onUpdateProfile={updateProfile} />}
+        {tab === 'hoy' && <DailyEntry profile={profile} onUpdateProfile={updateProfile} fechaInicial={fechaEditar} />}
         {tab === 'ranking' && <Ranking />}
-        {tab === 'historial' && <History profile={profile} />}
+        {tab === 'historial' && <History profile={profile} onEditarDia={irAEditarDia} />}
       </div>
     );
   }

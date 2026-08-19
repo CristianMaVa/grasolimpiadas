@@ -17,8 +17,8 @@ function hoyISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function DailyEntry({ profile, onUpdateProfile }) {
-  const [fecha, setFecha] = useState(hoyISO());
+export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
+  const [fecha, setFecha] = useState(fechaInicial || hoyISO());
   const [reglas, setReglas] = useState([]);
   const [marcadas, setMarcadas] = useState([]);
   const [comodinUsado, setComodinUsado] = useState(false);

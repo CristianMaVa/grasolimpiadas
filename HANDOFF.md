@@ -131,7 +131,7 @@ grasolimpiadas/
 │   └── 05_penalidades_manual.sql ← correr quinto (migración: pasa Día perdido / Finde destructivo / No registrar a manuales — solo si tu DB ya tenía el seed viejo)
 └── src/
     ├── main.jsx
-    ├── App.jsx                   ← orquesta vistas (select ↔ manage) + tabs (Hoy ↔ Ranking ↔ Historial)
+    ├── App.jsx                   ← orquesta vistas (select ↔ manage) + tabs (Hoy ↔ Ranking ↔ Historial) + fechaEditar (abrir "Hoy" en una fecha específica desde Historial)
     ├── styles.css                ← base mobile-first, tema oscuro
     ├── lib/
     │   └── supabase.js           ← cliente Supabase
@@ -147,9 +147,9 @@ grasolimpiadas/
         │   ├── rulesApi.js       ← listCheckableRules() (excluye automatica=true)
         │   ├── entriesApi.js     ← getEntryForDate (incluye evidenciaPorRegla), saveDailyEntry (fotosPorRegla), getDayDetail (solo lectura), countComidaLibreEnSemana, ajustarComodines
         │   ├── historyApi.js     ← getHistoryForUser (historial personal)
-        │   ├── DailyEntry.jsx    ← checklist por categoría + comodín + comida libre + evidencia obligatoria por item de suma (mín. 1 foto, bloquea guardado si falta)
-        │   ├── History.jsx      ← historial personal: días registrados + total acumulado; cada día abre DayDetail
-        │   └── DayDetail.jsx    ← detalle de solo lectura de un día pasado: qué se marcó + evidencia subida
+        │   ├── DailyEntry.jsx    ← checklist por categoría + comodín + comida libre + evidencia obligatoria por item de suma (mín. 1 foto, bloquea guardado si falta); acepta `fechaInicial` para abrir directo en un día pasado
+        │   ├── History.jsx      ← historial personal: días registrados + total acumulado; selector "¿se te olvidó un día?" para ir a cualquier fecha pasada (con o sin entry); cada día abre DayDetail
+        │   └── DayDetail.jsx    ← detalle de solo lectura de un día pasado: qué se marcó + evidencia subida; botón "Editar este día" → vuelve a Hoy en esa fecha
         └── ranking/
             ├── rankingApi.js     ← getRanking() (lee de la vista v_ranking)
             └── Ranking.jsx       ← leaderboard público, resalta el último lugar
@@ -163,6 +163,8 @@ grasolimpiadas/
 
 **Ajuste post-deploy (drill-down del historial):** cada día del historial ahora es clickeable y abre `DayDetail.jsx`, un resumen de solo lectura de exactamente lo que se marcó ese día y la evidencia subida (fotos con link a tamaño completo). Nueva función `getDayDetail(entryId)` en `entriesApi.js`, sin cambios de esquema.
 
+**Ajuste post-deploy (penalidades retroactivas desde Historial):** el dueño pidió poder marcar cosas negativas (día perdido, fin de semana destructivo, no registrar) para días pasados directamente desde el Historial, incluso si ese día nunca se registró. No se construyó un formulario nuevo — se reusó `DailyEntry.jsx` completo (ya soportaba cualquier fecha pasada vía el selector de fecha): `App.jsx` ahora guarda `fechaEditar` y expone `irAEditarDia(fecha)`, que abre la pestaña "Hoy" con esa fecha precargada. `History.jsx` agregó un selector de fecha + botón "Ir" (para días con o sin entry) y `DayDetail.jsx` un botón "Editar este día" (para días que ya tienen entry). Sin cambios de esquema ni de `entriesApi.js` — el checklist, el motor de puntos y la validación de evidencia (que no aplica a Penalidades por ser `resta`) ya funcionaban igual para cualquier fecha.
+
 Lo que ya funciona:
 - Selección de perfil sin contraseña, persistida en localStorage.
 - CRUD de participantes con soft-delete y reincorporación.
@@ -174,8 +176,9 @@ Lo que ya funciona:
 - Ranking público (`v_ranking`): total acumulado del reto por usuario activo, resalta a quien(es) están en último lugar (empates incluidos). Requiere correr `04_ranking_view.sql`.
 - Historial personal: lista de días registrados del usuario actual (más reciente primero), con el neto de cada uno, etiquetas de comodín/comida libre usados, y el total acumulado. Cada día es clickeable y abre un detalle de solo lectura (`DayDetail.jsx`) con lo marcado ese día y sus fotos de evidencia (con link a tamaño completo).
 - Penalidades manuales (día perdido, finde destructivo, no registré el día): checkboxes normales del checklist, ya no automáticas. Requiere correr `05_penalidades_manual.sql` si la DB ya tenía el catálogo viejo.
+- Retroactivo desde Historial: selector de fecha + "Ir" (para días con o sin entry) y botón "Editar este día" en el detalle — ambos abren "Hoy" en esa fecha para marcar/editar cualquier cosa, típicamente Penalidades olvidadas.
 - Navegación por tabs (Hoy / Ranking / Historial) dentro de `App.jsx`, sin librería de routing.
-- `npm run build` pasa limpio. Fases 1–4 probadas end-to-end en navegador contra Supabase real (checklist, cap de puntos, comodín con recálculo de contador y persistencia, comida libre, ranking con resaltado de último, historial, categoría "Penalidades", evidencia obligatoria bloqueando el guardado y persistiendo tras recargar, drill-down del historial mostrando item + foto con URL pública válida de Storage).
+- `npm run build` pasa limpio. Fases 1–4 probadas end-to-end en navegador contra Supabase real (checklist, cap de puntos, comodín con recálculo de contador y persistencia, comida libre, ranking con resaltado de último, historial, categoría "Penalidades", evidencia obligatoria bloqueando el guardado y persistiendo tras recargar, drill-down del historial mostrando item + foto con URL pública válida de Storage, penalidad retroactiva agregada a un día sin entry previo desde Historial y editada de vuelta desde el detalle).
 
 Convenciones observadas en el código actual (mantenerlas):
 - JS plano, sin TypeScript.

@@ -9,16 +9,21 @@ import DayDetail from './DayDetail';
 // con lo marcado y la evidencia subida (ver DayDetail.jsx).
 // ============================================================
 
+function hoyISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function formatFecha(fechaISO) {
   const d = new Date(`${fechaISO}T00:00:00`);
   return d.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: 'short' });
 }
 
-export default function History({ profile }) {
+export default function History({ profile, onEditarDia }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [seleccionado, setSeleccionado] = useState(null); // { id, fecha }
+  const [fechaOlvidada, setFechaOlvidada] = useState(hoyISO());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,6 +48,7 @@ export default function History({ profile }) {
         entryId={seleccionado.id}
         fecha={seleccionado.fecha}
         onBack={() => setSeleccionado(null)}
+        onEditar={onEditarDia}
       />
     );
   }
@@ -54,6 +60,24 @@ export default function History({ profile }) {
 
       {!loading && (
         <>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <label className="muted" style={{ fontSize: 13, display: 'block', marginBottom: 8 }}>
+              ¿Se te olvidó un día, o quieres marcar una penalidad retroactiva? (día perdido, fin de semana destructivo, no registré el día…)
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="date"
+                className="input"
+                value={fechaOlvidada}
+                max={hoyISO()}
+                onChange={(e) => setFechaOlvidada(e.target.value)}
+              />
+              <button className="btn btn-primary" onClick={() => onEditarDia(fechaOlvidada)}>
+                Ir
+              </button>
+            </div>
+          </div>
+
           <div className="card" style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="muted" style={{ fontSize: 14 }}>Total acumulado</span>
             <span style={{ fontSize: 22, fontWeight: 700, color: totalAcumulado < 0 ? 'var(--danger)' : 'var(--accent)' }}>
