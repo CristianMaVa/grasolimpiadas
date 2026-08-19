@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getRanking } from './rankingApi';
-import { initials, avatarColor } from '../users/avatar';
+import Avatar from '../users/Avatar';
 
 // ============================================================
 // Ranking público (Fase 3).
@@ -59,14 +59,7 @@ export default function Ranking() {
             <span className="muted" style={{ fontSize: 15, fontWeight: 700, width: 22, textAlign: 'center' }}>
               {i + 1}
             </span>
-            <span style={{
-              width: 36, height: 36, borderRadius: '50%',
-              background: avatarColor(r.nombre), color: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontWeight: 600, fontSize: 13, flexShrink: 0,
-            }}>
-              {initials(r.nombre)}
-            </span>
+            <Avatar user={r} size={36} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 15, fontWeight: 600 }}>{r.nombre}</div>
               <div className="muted" style={{ fontSize: 12 }}>

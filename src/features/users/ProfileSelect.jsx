@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { listActiveUsers } from './usersApi';
-import { initials, avatarColor } from './avatar';
+import Avatar from './Avatar';
 
 // ============================================================
 // Pantalla de selección de perfil.
@@ -69,7 +69,7 @@ export default function ProfileSelect({ onSelect, onManage }) {
                 style={{ justifyContent: 'flex-start', padding: 12 }}
                 onClick={() => onSelect(u)}
               >
-                <Avatar user={u} />
+                <Avatar user={u} size={34} />
                 <span style={{ fontSize: 15 }}>{u.nombre}</span>
               </button>
             ))}
@@ -85,19 +85,5 @@ export default function ProfileSelect({ onSelect, onManage }) {
         </>
       )}
     </div>
-  );
-}
-
-function Avatar({ user }) {
-  return (
-    <span style={{
-      width: 34, height: 34, borderRadius: '50%',
-      background: avatarColor(user.nombre),
-      color: '#fff', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', fontWeight: 600, fontSize: 13,
-      flexShrink: 0,
-    }}>
-      {initials(user.nombre)}
-    </span>
   );
 }

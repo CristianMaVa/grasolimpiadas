@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useProfile } from './features/users/useProfile';
 import ProfileSelect from './features/users/ProfileSelect';
 import ManageUsers from './features/users/ManageUsers';
-import { initials, avatarColor } from './features/users/avatar';
+import Avatar from './features/users/Avatar';
 import DailyEntry from './features/entries/DailyEntry';
 import History from './features/entries/History';
 import Ranking from './features/ranking/Ranking';
@@ -39,14 +39,7 @@ export default function App() {
       <div style={{ paddingTop: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{
-              width: 36, height: 36, borderRadius: '50%',
-              background: avatarColor(profile.nombre), color: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontWeight: 600, fontSize: 13,
-            }}>
-              {initials(profile.nombre)}
-            </span>
+            <Avatar user={profile} size={36} />
             <div style={{ fontSize: 16, fontWeight: 600 }}>{profile.nombre}</div>
           </div>
           <button className="btn btn-ghost" style={{ padding: '8px 12px', fontSize: 13 }} onClick={clearProfile}>

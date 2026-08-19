@@ -66,6 +66,19 @@ export async function updateUser(id, { nombre, avatarUrl }) {
   return data;
 }
 
+// Sube una foto de perfil a Storage y devuelve su URL pública.
+// No actualiza el usuario — el caller debe pasar la URL a updateUser().
+export async function uploadAvatar(userId, file) {
+  const ext = file.name.split('.').pop();
+  const path = `${userId}-${Date.now()}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file);
+  if (uploadError) throw uploadError;
+
+  const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
+  return pub.publicUrl;
+}
+
 // Soft-delete: saca al participante del reto sin borrar su historial
 export async function deactivateUser(id) {
   const { data, error } = await supabase

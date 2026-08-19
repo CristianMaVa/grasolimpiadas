@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   listAllUsers, createUser, updateUser,
-  deactivateUser, reactivateUser,
+  deactivateUser, reactivateUser, uploadAvatar,
 } from './usersApi';
-import { initials, avatarColor } from './avatar';
+import Avatar from './Avatar';
 
 // ============================================================
 // Gestión de participantes.
@@ -20,6 +20,7 @@ export default function ManageUsers({ onBack }) {
   const [saving, setSaving] = useState(false);
   const [editId, setEditId] = useState(null);
   const [editValue, setEditValue] = useState('');
+  const [subiendoFotoId, setSubiendoFotoId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,6 +78,21 @@ export default function ManageUsers({ onBack }) {
     catch (e) { setError('No se pudo reincorporar.'); }
   }
 
+  async function handleFoto(id, file) {
+    if (!file) return;
+    setSubiendoFotoId(id);
+    setError(null);
+    try {
+      const url = await uploadAvatar(id, file);
+      await updateUser(id, { avatarUrl: url });
+      await load();
+    } catch (e) {
+      setError('No se pudo subir la foto.');
+    } finally {
+      setSubiendoFotoId(null);
+    }
+  }
+
   return (
     <div style={{ paddingTop: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
@@ -120,7 +136,7 @@ export default function ManageUsers({ onBack }) {
           <SectionLabel>Activos · {activos.length}</SectionLabel>
           {activos.map((u) => (
             <Row key={u.id}>
-              <Avatar user={u} />
+              <FotoConEditor user={u} subiendo={subiendoFotoId === u.id} onFoto={(f) => handleFoto(u.id, f)} />
               {editId === u.id ? (
                 <input
                   className="input"
@@ -164,7 +180,7 @@ export default function ManageUsers({ onBack }) {
               <SectionLabel>Fuera del reto · {inactivos.length}</SectionLabel>
               {inactivos.map((u) => (
                 <Row key={u.id} dim>
-                  <Avatar user={u} />
+                  <Avatar user={u} size={32} />
                   <span style={{ flex: 1, fontSize: 15 }}>{u.nombre}</span>
                   <button
                     className="btn btn-ghost"
@@ -208,15 +224,29 @@ function Row({ children, dim }) {
   );
 }
 
-function Avatar({ user }) {
+// Avatar de un participante activo + botón para reemplazar la foto
+function FotoConEditor({ user, subiendo, onFoto }) {
   return (
-    <span style={{
-      width: 32, height: 32, borderRadius: '50%',
-      background: avatarColor(user.nombre), color: '#fff',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontWeight: 600, fontSize: 12, flexShrink: 0,
-    }}>
-      {initials(user.nombre)}
-    </span>
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <Avatar user={user} size={32} />
+      <label
+        style={{
+          position: 'absolute', bottom: -4, right: -4,
+          width: 16, height: 16, borderRadius: '50%',
+          background: 'var(--surface-2)', border: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 9, cursor: 'pointer',
+        }}
+      >
+        {subiendo ? '…' : '📷'}
+        <input
+          type="file"
+          accept="image/*"
+          disabled={subiendo}
+          style={{ display: 'none' }}
+          onChange={(e) => { onFoto(e.target.files?.[0] ?? null); e.target.value = ''; }}
+        />
+      </label>
+    </div>
   );
 }

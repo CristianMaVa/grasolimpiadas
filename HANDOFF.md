@@ -128,7 +128,8 @@ grasolimpiadas/
 │   ├── 02_seed_rules.sql         ← correr segundo (ya incluye Penalidades como manuales)
 │   ├── 03_storage.sql            ← correr tercero (bucket "evidence" + policies)
 │   ├── 04_ranking_view.sql       ← correr cuarto (vista v_ranking)
-│   └── 05_penalidades_manual.sql ← correr quinto (migración: pasa Día perdido / Finde destructivo / No registrar a manuales — solo si tu DB ya tenía el seed viejo)
+│   ├── 05_penalidades_manual.sql ← correr quinto (migración: pasa Día perdido / Finde destructivo / No registrar a manuales — solo si tu DB ya tenía el seed viejo)
+│   └── 06_avatars_storage.sql    ← correr sexto (bucket "avatars" + policies)
 └── src/
     ├── main.jsx
     ├── App.jsx                   ← orquesta vistas (select ↔ manage) + tabs (Hoy ↔ Ranking ↔ Historial) + fechaEditar (abrir "Hoy" en una fecha específica desde Historial)
@@ -137,11 +138,12 @@ grasolimpiadas/
     │   └── supabase.js           ← cliente Supabase
     └── features/
         ├── users/
-        │   ├── usersApi.js       ← CRUD (listActiveUsers, listAllUsers, createUser, updateUser, deactivateUser, reactivateUser)
+        │   ├── usersApi.js       ← CRUD (listActiveUsers, listAllUsers, createUser, updateUser, deactivateUser, reactivateUser, uploadAvatar)
         │   ├── useProfile.js     ← sesión de perfil en localStorage (+ updateProfile para refrescar comodines)
-        │   ├── avatar.js         ← iniciales + color estable por nombre
+        │   ├── avatarUtils.js    ← iniciales + color estable por nombre (renombrado desde avatar.js — colisionaba con Avatar.jsx en sistemas de archivos insensibles a mayúsculas, ej. macOS)
+        │   ├── Avatar.jsx        ← avatar compartido: foto real si `avatar_url` existe, si no el círculo de iniciales
         │   ├── ProfileSelect.jsx ← pantalla de selección de perfil
-        │   └── ManageUsers.jsx   ← gestión de participantes (CRUD + reactivar)
+        │   └── ManageUsers.jsx   ← gestión de participantes (CRUD + reactivar + subir foto de perfil por participante)
         ├── entries/
         │   ├── pointsEngine.js   ← calcularNeto() — función pura, cap +15, comodín, comida libre
         │   ├── rulesApi.js       ← listCheckableRules() (excluye automatica=true)
@@ -163,6 +165,8 @@ grasolimpiadas/
 
 **Ajuste post-deploy (drill-down del historial):** cada día del historial ahora es clickeable y abre `DayDetail.jsx`, un resumen de solo lectura de exactamente lo que se marcó ese día y la evidencia subida (fotos con link a tamaño completo). Nueva función `getDayDetail(entryId)` en `entriesApi.js`, sin cambios de esquema.
 
+**Ajuste post-deploy (foto de perfil real):** `users.avatar_url` ya existía en el esquema desde la Fase 1 pero nunca se usaba — toda la app siempre mostraba el círculo de iniciales. Se agregó `uploadAvatar(userId, file)` en `usersApi.js`, el bucket `avatars` (`supabase/06_avatars_storage.sql`), y un componente compartido `Avatar.jsx` (foto si `avatar_url` existe, si no las iniciales de siempre) que reemplazó las 4 implementaciones locales duplicadas (`App.jsx`, `ProfileSelect.jsx`, `ManageUsers.jsx`, `Ranking.jsx`). `ManageUsers.jsx` agrega un botón de cámara sobre el avatar de cada participante activo para subir/reemplazar su foto. Sin remover fotos viejas de Storage al reemplazar (quedan huérfanas, igual que el resto de la app no hace borrado duro). **Nota de nombres de archivo:** el helper `avatar.js` (iniciales + color) se renombró a `avatarUtils.js` porque colisionaba con el nuevo `Avatar.jsx` en sistemas de archivos insensibles a mayúsculas (macOS) — Vite resolvía `./Avatar` al archivo viejo y el build fallaba. Si agregas otro archivo cuyo nombre solo difiera en mayúsculas de uno existente, vas a pisar la misma piedra.
+
 **Ajuste post-deploy (penalidades retroactivas desde Historial):** el dueño pidió poder marcar cosas negativas (día perdido, fin de semana destructivo, no registrar) para días pasados directamente desde el Historial, incluso si ese día nunca se registró. No se construyó un formulario nuevo — se reusó `DailyEntry.jsx` completo (ya soportaba cualquier fecha pasada vía el selector de fecha): `App.jsx` ahora guarda `fechaEditar` y expone `irAEditarDia(fecha)`, que abre la pestaña "Hoy" con esa fecha precargada. `History.jsx` agregó un selector de fecha + botón "Ir" (para días con o sin entry) y `DayDetail.jsx` un botón "Editar este día" (para días que ya tienen entry). Sin cambios de esquema ni de `entriesApi.js` — el checklist, el motor de puntos y la validación de evidencia (que no aplica a Penalidades por ser `resta`) ya funcionaban igual para cualquier fecha.
 
 Lo que ya funciona:
@@ -177,8 +181,9 @@ Lo que ya funciona:
 - Historial personal: lista de días registrados del usuario actual (más reciente primero), con el neto de cada uno, etiquetas de comodín/comida libre usados, y el total acumulado. Cada día es clickeable y abre un detalle de solo lectura (`DayDetail.jsx`) con lo marcado ese día y sus fotos de evidencia (con link a tamaño completo).
 - Penalidades manuales (día perdido, finde destructivo, no registré el día): checkboxes normales del checklist, ya no automáticas. Requiere correr `05_penalidades_manual.sql` si la DB ya tenía el catálogo viejo.
 - Retroactivo desde Historial: selector de fecha + "Ir" (para días con o sin entry) y botón "Editar este día" en el detalle — ambos abren "Hoy" en esa fecha para marcar/editar cualquier cosa, típicamente Penalidades olvidadas.
+- Foto de perfil real por participante: botón de cámara en "Gestionar participantes" sube a Storage (`avatars`) y actualiza `users.avatar_url`; se muestra en las 4 pantallas que renderizan avatares (selección de perfil, gestión, header de "Hoy", Ranking). Requiere correr `06_avatars_storage.sql`.
 - Navegación por tabs (Hoy / Ranking / Historial) dentro de `App.jsx`, sin librería de routing.
-- `npm run build` pasa limpio. Fases 1–4 probadas end-to-end en navegador contra Supabase real (checklist, cap de puntos, comodín con recálculo de contador y persistencia, comida libre, ranking con resaltado de último, historial, categoría "Penalidades", evidencia obligatoria bloqueando el guardado y persistiendo tras recargar, drill-down del historial mostrando item + foto con URL pública válida de Storage, penalidad retroactiva agregada a un día sin entry previo desde Historial y editada de vuelta desde el detalle).
+- `npm run build` pasa limpio. Fases 1–4 probadas end-to-end en navegador contra Supabase real (checklist, cap de puntos, comodín con recálculo de contador y persistencia, comida libre, ranking con resaltado de último, historial, categoría "Penalidades", evidencia obligatoria bloqueando el guardado y persistiendo tras recargar, drill-down del historial mostrando item + foto con URL pública válida de Storage, penalidad retroactiva agregada a un día sin entry previo desde Historial y editada de vuelta desde el detalle, foto de perfil subida y persistiendo en las 4 pantallas que la muestran).
 
 Convenciones observadas en el código actual (mantenerlas):
 - JS plano, sin TypeScript.
