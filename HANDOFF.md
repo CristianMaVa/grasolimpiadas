@@ -6,7 +6,7 @@ Reto fitness entre amigos con ranking público. Webapp mobile-first. Este docume
 
 ## 1. Qué es
 
-Reto de hábitos ("wellness") entre ~11 amigos. Cada quien registra a diario lo que cumplió/falló según un sistema de puntos, y hay un ranking público donde el último queda expuesto (es parte del concepto, con tono de "olimpiadas de la grasa"). Honor system: no hay validación de evidencia.
+Reto de hábitos ("wellness") entre ~11 amigos. Cada quien registra a diario lo que cumplió/falló según un sistema de puntos, y hay un ranking público donde el último queda expuesto (es parte del concepto, con tono de "olimpiadas de la grasa"). Honor system, pero con evidencia obligatoria: todo item que suma puntos requiere al menos 1 foto (ver §3.3, revisado tras el deploy). Nadie valida que la foto sea real o corresponda — es honor system con fricción, no verificación.
 
 El tono del producto es competitivo y burlón (ver copy original más abajo), pero la app en sí es simple y directa.
 
@@ -17,7 +17,7 @@ El tono del producto es competitivo y burlón (ver copy original más abajo), pe
 - **Frontend:** React 18 + Vite, JavaScript (no TypeScript), mobile-first responsive
 - **Backend/DB:** Supabase (Postgres + Storage). **No se usa Supabase Auth** — el login es selección de perfil sin contraseña.
 - **Sin jobs automáticos ni pg_cron.** Se evaluó para las penalidades por umbral y se descartó (ver §3.8) — todo el reglamento es honor system marcado a mano.
-- **Deploy:** Vercel o Netlify (pendiente)
+- **Deploy:** Vercel, en producción en https://grasolimpiadas.vercel.app — repo en GitHub (`CristianMaVa/grasolimpiadas`), auto-deploy en cada push a `main`.
 
 Sin librerías de estado ni de routing por ahora — el switch de vistas es un `useState` simple en `App.jsx`. Si crece, considerar react-router.
 
@@ -27,7 +27,7 @@ Sin librerías de estado ni de routing por ahora — el switch de vistas es un `
 
 1. **Participantes flexibles:** CRUD con soft-delete (`activo = false`), nunca borrado duro, para preservar historial. Sin límite fijo.
 2. **Login:** selección de perfil, sin contraseña (honor system). Se persiste en localStorage.
-3. **Evidencia:** foto **opcional**. No bloquea el registro, no requiere aprobación. Todo entra como válido.
+3. **Evidencia: OBLIGATORIA para todo item de `tipo = 'suma'`, revisado post-deploy.** Decisión original (foto opcional, no bloqueante) reemplazada: cada item de suma marcado necesita mínimo 1 foto propia (ej. entrenar exige foto entrenando; agua exige foto del agua — puede ser más de 1 si quieres, pero el mínimo exigido siempre es 1, sin importar la regla). Las restas (incluida la categoría Penalidades) NUNCA piden foto — no tiene sentido evidenciar que comiste chatarra. **Guardar el día se bloquea** si falta la foto de algún item de suma marcado. Nadie aprueba ni valida el contenido de la foto — sigue siendo honor system, solo que ahora exige el gesto de subir algo.
 4. **Sin rachas.** Los bonus de racha (+3 a 3 días, +7 a 7 días) del reglamento original fueron **eliminados**. Los bonus de día (levantarse antes de 7am, día sin azúcar) **sí se mantienen**.
 5. **Cap de +15 puntos/día**, aplicado **solo a los positivos**. Las restas **sí pueden llevar el día a negativo, sin piso**.
 6. **Comida libre:** 1 por semana, no penaliza.
@@ -104,6 +104,7 @@ SQL completo en `supabase/01_schema.sql`. Resumen:
 - **evidence**: `id`, `entry_id` (FK), `regla_key` (FK, nullable), `foto_url`, `created_at`
 
 Notas:
+- `evidence.regla_key` ya no es solo "nullable por flexibilidad" — desde el ajuste post-deploy, cada foto SIEMPRE se sube atada a un `regla_key` específico (una fila por foto por item). El campo se deja nullable en el esquema por si en el futuro se quiere permitir una foto general del día sin regla asociada, pero el flujo actual de la app (`DailyEntry.jsx`) nunca inserta evidencia sin `regla_key`.
 - `entry_items.puntos` se **copia** de la regla al momento de marcar (congela el valor, por si el catálogo cambia después).
 - `daily_entries.puntos_netos` es el resultado del motor de puntos (ver §7). Se recalcula cuando cambian los items o se aplica comodín.
 - Hay trigger `touch_updated_at()` en `daily_entries`.
@@ -144,9 +145,9 @@ grasolimpiadas/
         ├── entries/
         │   ├── pointsEngine.js   ← calcularNeto() — función pura, cap +15, comodín, comida libre
         │   ├── rulesApi.js       ← listCheckableRules() (excluye automatica=true)
-        │   ├── entriesApi.js     ← getEntryForDate, saveDailyEntry, countComidaLibreEnSemana, ajustarComodines
+        │   ├── entriesApi.js     ← getEntryForDate (incluye evidenciaPorRegla), saveDailyEntry (fotosPorRegla), countComidaLibreEnSemana, ajustarComodines
         │   ├── historyApi.js     ← getHistoryForUser (historial personal)
-        │   ├── DailyEntry.jsx    ← checklist por categoría + comodín + comida libre + foto opcional
+        │   ├── DailyEntry.jsx    ← checklist por categoría + comodín + comida libre + evidencia obligatoria por item de suma (mín. 1 foto, bloquea guardado si falta)
         │   └── History.jsx      ← historial personal: días registrados + total acumulado
         └── ranking/
             ├── rankingApi.js     ← getRanking() (lee de la vista v_ranking)
@@ -157,6 +158,8 @@ grasolimpiadas/
 
 **Nota de la Fase 4:** el plan original (ver versión vieja de este documento) era un job pg_cron para las tres penalidades por umbral. Al intentar habilitarlo, Supabase devolvió `ERROR: schema "cron" does not exist` — la extensión no estaba disponible sin más pasos — y el dueño decidió no complicar la infra por esto. Las tres penalidades (día perdido, finde destructivo, no registrar) se movieron al catálogo manual (§3.8, §4). No quedó ningún job ni cron en el proyecto.
 
+**Ajuste post-deploy (evidencia obligatoria):** ya con la app en producción (https://grasolimpiadas.vercel.app), el dueño pidió atar la evidencia fotográfica a cada item marcado en vez de una foto genérica opcional por día. Se implementó sin cambios de esquema (`evidence.regla_key` ya existía) — solo cambios de app: `entriesApi.js` y `DailyEntry.jsx`. Reglas: obligatorio (mín. 1 foto) para todo `tipo = 'suma'`; nunca para `tipo = 'resta'` (incluida Penalidades); bloquea el guardado si falta. Al implementar esto se encontró y corrigió un bug real (no solo de las pruebas automatizadas): `e.target.files` es una referencia viva al input — limpiar `input.value = ''` justo después de leerlo (para poder re-seleccionar) vaciaba también el array que se pensaba guardar en el estado, si la lectura ocurría de forma diferida. Fix: convertir a array (`Array.from(...)`) ANTES de limpiar el input, no dentro del callback de `setState`.
+
 Lo que ya funciona:
 - Selección de perfil sin contraseña, persistida en localStorage.
 - CRUD de participantes con soft-delete y reincorporación.
@@ -164,12 +167,12 @@ Lo que ya funciona:
 - Motor de puntos (`calcularNeto`): cap +15 solo a positivos, negativos sin piso.
 - Comodín: máx 2 por persona (contador en `users.comodines_restantes`), aplicable a cualquier día (retroactivo), deja el neto del día en 0. El ranking histórico queda consistente automáticamente porque `puntos_netos` se guarda en 0 al momento de activarlo — no requiere un recálculo aparte (Fase 3 solo suma esa columna).
 - Comida libre: máx 1 por semana (lunes a domingo), decisión de UX tomada aquí: exime del cómputo las restas de categoría "Alimentación" marcadas ese día (quedan registradas para el historial, pero no penalizan el neto).
-- Foto de evidencia opcional, sube a Storage (`evidence`) y guarda su URL en `evidence.foto_url`. Requiere correr `03_storage.sql`.
+- Evidencia fotográfica obligatoria por item de suma marcado (mín. 1 foto cada uno; las restas no la piden). Sube a Storage (`evidence`) atada a `entry_id` + `regla_key`, y bloquea el guardado del día si algún item de suma marcado no tiene foto. Requiere correr `03_storage.sql`.
 - Ranking público (`v_ranking`): total acumulado del reto por usuario activo, resalta a quien(es) están en último lugar (empates incluidos). Requiere correr `04_ranking_view.sql`.
 - Historial personal: lista de días registrados del usuario actual (más reciente primero), con el neto de cada uno, etiquetas de comodín/comida libre usados, y el total acumulado.
 - Penalidades manuales (día perdido, finde destructivo, no registré el día): checkboxes normales del checklist, ya no automáticas. Requiere correr `05_penalidades_manual.sql` si la DB ya tenía el catálogo viejo.
 - Navegación por tabs (Hoy / Ranking / Historial) dentro de `App.jsx`, sin librería de routing.
-- `npm run build` pasa limpio. Fases 1–4 probadas end-to-end en navegador contra Supabase real (checklist, cap de puntos, comodín con recálculo de contador y persistencia, comida libre, ranking con resaltado de último, historial, categoría "Penalidades" con sus 3 items marcables y neto negativo persistido correctamente).
+- `npm run build` pasa limpio. Fases 1–4 probadas end-to-end en navegador contra Supabase real (checklist, cap de puntos, comodín con recálculo de contador y persistencia, comida libre, ranking con resaltado de último, historial, categoría "Penalidades", evidencia obligatoria bloqueando el guardado y persistiendo tras recargar).
 
 Convenciones observadas en el código actual (mantenerlas):
 - JS plano, sin TypeScript.
@@ -231,6 +234,13 @@ Las penalidades "especiales" (día perdido, finde destructivo, no registrar) ya 
 - `pointsEngine.js` no necesitó cambios: las trata como cualquier item marcado. ✅
 - Probado en navegador contra Supabase real: la categoría "Penalidades" aparece con sus 3 items, marcar "Día perdido" bajó el neto a -6 y persistió tras guardar. ✅
 
+### Ajuste post-deploy — Evidencia obligatoria por item (COMPLETA)
+- Con la app ya en producción, se reemplazó la foto opcional/genérica por día por evidencia obligatoria (mín. 1 foto) atada a cada item de `tipo = 'suma'` marcado; las restas nunca la piden. ✅
+- Guardar el día se bloquea si falta foto de algún item de suma marcado; mensaje lista cuáles. ✅
+- Sin cambios de esquema — `evidence.regla_key` ya existía. Solo cambió `entriesApi.js` (`getEntryForDate` devuelve `evidenciaPorRegla`; `saveDailyEntry` recibe `fotosPorRegla`) y `DailyEntry.jsx` (UI de foto por fila). ✅
+- Bug encontrado y corregido durante la implementación: limpiar el `<input type="file">` justo después de leerlo vaciaba la referencia viva a `FileList` antes de que el `setState` la procesara. Fix: `Array.from(...)` antes de limpiar el input. ✅
+- Probado en navegador: bloqueo funciona (lista los items sin foto), subir una foto desbloquea ese item, y la foto persiste tras recargar (viene de Supabase, no de memoria). ✅
+
 ### Fase 5 — Pulido (opcional)
 - Copy con el tono de las Grasolimpiadas, animaciones, notificación del último lugar.
 
@@ -252,4 +262,4 @@ El reto se llama "Las Grasolimpiadas". Tono competitivo, burlón, motivacional-a
 
 ## Resumen para arrancar rápido
 
-Estás continuando una webapp React+Vite+Supabase de un reto fitness. Fases 1 (auth por perfil + CRUD de participantes), 2 (registro diario + motor de puntos), 3 (ranking público + historial) y 4 (penalidades manuales, sin jobs) están listas, compilan y probadas end-to-end contra Supabase real. **Lo que queda es la Fase 5: pulido** (opcional — ver §8). Lee §3 (decisiones cerradas), §4 (reglamento), §5 (modelo de datos) y §7 (motor de puntos) antes de escribir código. No reabras decisiones cerradas sin preguntar. Mantén JS plano, español en la UI, y la estructura por features.
+Estás continuando una webapp React+Vite+Supabase de un reto fitness, ya en producción en https://grasolimpiadas.vercel.app. Fases 1 (auth por perfil + CRUD de participantes), 2 (registro diario + motor de puntos), 3 (ranking público + historial), 4 (penalidades manuales, sin jobs) y el ajuste post-deploy (evidencia fotográfica obligatoria por item de suma) están listos, compilan y probados end-to-end contra Supabase real. **Lo que queda es la Fase 5: pulido** (opcional — ver §8). Lee §3 (decisiones cerradas, incluye el cambio de evidencia obligatoria en §3.3), §4 (reglamento), §5 (modelo de datos) y §7 (motor de puntos) antes de escribir código. No reabras decisiones cerradas sin preguntar. Mantén JS plano, español en la UI, y la estructura por features.

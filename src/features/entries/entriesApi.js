@@ -28,7 +28,9 @@ export function semanaDe(fechaISO) {
   return { desde: aISO(lunes), hasta: aISO(domingo) };
 }
 
-// Carga el entry (si existe) y las regla_key marcadas para user+fecha
+// Carga el entry (si existe), las regla_key marcadas y la evidencia ya
+// subida, agrupada por regla_key — para saber qué items ya cumplen el
+// mínimo de fotos sin volver a pedirlas al reeditar un día.
 export async function getEntryForDate(userId, fecha) {
   const { data: entry, error } = await supabase
     .from('daily_entries')
@@ -38,15 +40,27 @@ export async function getEntryForDate(userId, fecha) {
     .maybeSingle();
 
   if (error) throw error;
-  if (!entry) return { entry: null, reglaKeys: [] };
+  if (!entry) return { entry: null, reglaKeys: [], evidenciaPorRegla: {} };
 
   const { data: items, error: itemsError } = await supabase
     .from('entry_items')
     .select('regla_key')
     .eq('entry_id', entry.id);
-
   if (itemsError) throw itemsError;
-  return { entry, reglaKeys: items.map((i) => i.regla_key) };
+
+  const { data: evidencia, error: evError } = await supabase
+    .from('evidence')
+    .select('id, regla_key, foto_url')
+    .eq('entry_id', entry.id);
+  if (evError) throw evError;
+
+  const evidenciaPorRegla = {};
+  for (const e of evidencia) {
+    if (!e.regla_key) continue;
+    (evidenciaPorRegla[e.regla_key] ??= []).push({ id: e.id, foto_url: e.foto_url });
+  }
+
+  return { entry, reglaKeys: items.map((i) => i.regla_key), evidenciaPorRegla };
 }
 
 // Cuántos OTROS días de la semana ya usaron la comida libre (máx 1/semana)
@@ -64,10 +78,13 @@ export async function countComidaLibreEnSemana(userId, fecha, excludeEntryId = n
   return data.filter((e) => e.id !== excludeEntryId).length;
 }
 
-// Guarda (crea o actualiza) el día completo: entry + items + foto opcional.
-// `reglas` es el catálogo completo (para copiar categoria/puntos a los items).
+// Guarda (crea o actualiza) el día completo: entry + items + evidencia
+// nueva por regla. `reglas` es el catálogo completo (para copiar
+// categoria/puntos a los items). `fotosPorRegla` es { regla_key: File[] }
+// — solo las fotos nuevas seleccionadas en esta sesión de edición; la
+// evidencia ya subida en guardados anteriores no se toca.
 export async function saveDailyEntry({
-  userId, fecha, reglas, reglaKeysMarcadas, comodinUsado, comidaLibreUsada, foto,
+  userId, fecha, reglas, reglaKeysMarcadas, comodinUsado, comidaLibreUsada, fotosPorRegla,
 }) {
   const { data: entry, error: upsertError } = await supabase
     .from('daily_entries')
@@ -101,17 +118,20 @@ export async function saveDailyEntry({
     .single();
   if (updError) throw updError;
 
-  if (foto) {
-    const ext = foto.name.split('.').pop();
-    const path = `${userId}/${fecha}-${Date.now()}.${ext}`;
-    const { error: uploadError } = await supabase.storage.from('evidence').upload(path, foto);
-    if (uploadError) throw uploadError;
+  for (const [reglaKey, files] of Object.entries(fotosPorRegla || {})) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const ext = file.name.split('.').pop();
+      const path = `${userId}/${fecha}-${reglaKey}-${Date.now()}-${i}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from('evidence').upload(path, file);
+      if (uploadError) throw uploadError;
 
-    const { data: pub } = supabase.storage.from('evidence').getPublicUrl(path);
-    const { error: evError } = await supabase
-      .from('evidence')
-      .insert({ entry_id: entry.id, foto_url: pub.publicUrl });
-    if (evError) throw evError;
+      const { data: pub } = supabase.storage.from('evidence').getPublicUrl(path);
+      const { error: evError } = await supabase
+        .from('evidence')
+        .insert({ entry_id: entry.id, regla_key: reglaKey, foto_url: pub.publicUrl });
+      if (evError) throw evError;
+    }
   }
 
   return entryFinal;

@@ -4,11 +4,13 @@ import { getEntryForDate, countComidaLibreEnSemana, saveDailyEntry, ajustarComod
 import { calcularNeto } from './pointsEngine';
 
 // ============================================================
-// Registro diario (Fase 2).
+// Registro diario (Fase 2, ajustado luego del deploy).
 // Checklist agrupado por categoría + comodín (retroactivo,
-// deja el día en 0) + comida libre (1/semana, sin penalizar) +
-// foto opcional de evidencia. Editable para el día actual y
-// para días pasados.
+// deja el día en 0) + comida libre (1/semana, sin penalizar).
+// Evidencia fotográfica: obligatoria (mín. 1 foto) para todo
+// item de tipo "suma"; las restas (incluye Penalidades) no la
+// piden. Sin foto en un item de suma marcado, no se puede
+// guardar el día. Editable para el día actual y días pasados.
 // ============================================================
 
 function hoyISO() {
@@ -23,7 +25,8 @@ export default function DailyEntry({ profile, onUpdateProfile }) {
   const [comodinOriginal, setComodinOriginal] = useState(false);
   const [comidaLibreUsada, setComidaLibreUsada] = useState(false);
   const [otrasComidasLibres, setOtrasComidasLibres] = useState(0);
-  const [foto, setFoto] = useState(null);
+  const [evidenciaExistente, setEvidenciaExistente] = useState({}); // { regla_key: [{id, foto_url}] }
+  const [fotosNuevas, setFotosNuevas] = useState({}); // { regla_key: File[] }
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -47,8 +50,10 @@ export default function DailyEntry({ profile, onUpdateProfile }) {
     setError(null);
     setGuardado(false);
     try {
-      const { entry, reglaKeys } = await getEntryForDate(profile.id, fecha);
+      const { entry, reglaKeys, evidenciaPorRegla } = await getEntryForDate(profile.id, fecha);
       setMarcadas(reglaKeys);
+      setEvidenciaExistente(evidenciaPorRegla ?? {});
+      setFotosNuevas({});
       setComodinUsado(entry?.comodin_usado ?? false);
       setComodinOriginal(entry?.comodin_usado ?? false);
       setComidaLibreUsada(entry?.comida_libre_usada ?? false);
@@ -65,6 +70,18 @@ export default function DailyEntry({ profile, onUpdateProfile }) {
 
   function toggleRegla(key) {
     setMarcadas((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
+
+  // `files` debe ser un array ya "congelado" (no la FileList viva del
+  // input) — el caller limpia el input justo después de llamar esto,
+  // lo que vacía la FileList original si la seguimos referenciando.
+  function agregarFotos(reglaKey, files) {
+    if (!files || files.length === 0) return;
+    setFotosNuevas((prev) => ({ ...prev, [reglaKey]: [...(prev[reglaKey] ?? []), ...files] }));
+  }
+
+  function quitarFotoNueva(reglaKey, index) {
+    setFotosNuevas((prev) => ({ ...prev, [reglaKey]: prev[reglaKey].filter((_, i) => i !== index) }));
   }
 
   const itemsMarcados = useMemo(
@@ -87,11 +104,26 @@ export default function DailyEntry({ profile, onUpdateProfile }) {
     return orden.map((categoria) => ({ categoria, items: grupos[categoria] }));
   }, [reglas]);
 
+  const itemsSinEvidencia = useMemo(
+    () => itemsMarcados.filter((r) => {
+      if (r.tipo !== 'suma') return false;
+      const existentes = evidenciaExistente[r.regla_key]?.length ?? 0;
+      const nuevas = fotosNuevas[r.regla_key]?.length ?? 0;
+      return existentes + nuevas < 1;
+    }),
+    [itemsMarcados, evidenciaExistente, fotosNuevas]
+  );
+
   const comodinesDisponibles = profile.comodines_restantes ?? 2;
   const puedeActivarComodin = comodinUsado || comodinesDisponibles > 0;
   const puedeActivarComidaLibre = comidaLibreUsada || otrasComidasLibres < 1;
 
   async function handleGuardar() {
+    if (itemsSinEvidencia.length > 0) {
+      setError(`Falta foto para: ${itemsSinEvidencia.map((r) => r.descripcion).join(', ')}.`);
+      return;
+    }
+
     setSaving(true);
     setError(null);
     try {
@@ -102,7 +134,7 @@ export default function DailyEntry({ profile, onUpdateProfile }) {
         reglaKeysMarcadas: marcadas,
         comodinUsado,
         comidaLibreUsada,
-        foto,
+        fotosPorRegla: fotosNuevas,
       });
 
       if (comodinUsado !== comodinOriginal) {
@@ -112,7 +144,7 @@ export default function DailyEntry({ profile, onUpdateProfile }) {
         setComodinOriginal(comodinUsado);
       }
 
-      setFoto(null);
+      await cargarDia();
       setGuardado(true);
     } catch (e) {
       setError('No se pudo guardar el día.');
@@ -178,21 +210,14 @@ export default function DailyEntry({ profile, onUpdateProfile }) {
                   checked={marcadas.includes(r.regla_key)}
                   disabled={comodinUsado}
                   onToggle={() => toggleRegla(r.regla_key)}
+                  fotosExistentes={evidenciaExistente[r.regla_key] ?? []}
+                  fotosNuevas={fotosNuevas[r.regla_key] ?? []}
+                  onAgregarFotos={(files) => agregarFotos(r.regla_key, files)}
+                  onQuitarFotoNueva={(i) => quitarFotoNueva(r.regla_key, i)}
                 />
               ))}
             </div>
           ))}
-
-          <div className="card" style={{ marginBottom: 16 }}>
-            <label className="muted" style={{ fontSize: 13, display: 'block', marginBottom: 8 }}>
-              Foto de evidencia (opcional)
-            </label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setFoto(e.target.files?.[0] ?? null)}
-            />
-          </div>
 
           <div className="card" style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="muted" style={{ fontSize: 14 }}>Neto del día</span>
@@ -219,21 +244,66 @@ export default function DailyEntry({ profile, onUpdateProfile }) {
   );
 }
 
-function RuleRow({ regla, checked, disabled, onToggle }) {
+function RuleRow({
+  regla, checked, disabled, onToggle,
+  fotosExistentes, fotosNuevas, onAgregarFotos, onQuitarFotoNueva,
+}) {
+  const requiereEvidencia = regla.tipo === 'suma';
+  const totalFotos = fotosExistentes.length + fotosNuevas.length;
+
   return (
-    <label
-      style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '10px 0', borderBottom: '1px solid var(--border)',
-        opacity: disabled ? 0.5 : 1, cursor: disabled ? 'default' : 'pointer',
-      }}
-    >
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={onToggle} style={{ width: 18, height: 18 }} />
-      <span style={{ flex: 1, fontSize: 14 }}>{regla.descripcion}</span>
-      <span style={{ fontSize: 13, fontWeight: 600, color: regla.puntos > 0 ? 'var(--accent)' : 'var(--danger)' }}>
-        {regla.puntos > 0 ? `+${regla.puntos}` : regla.puntos}
-      </span>
-    </label>
+    <div style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', opacity: disabled ? 0.5 : 1 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: disabled ? 'default' : 'pointer' }}>
+        <input type="checkbox" checked={checked} disabled={disabled} onChange={onToggle} style={{ width: 18, height: 18 }} />
+        <span style={{ flex: 1, fontSize: 14 }}>{regla.descripcion}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: regla.puntos > 0 ? 'var(--accent)' : 'var(--danger)' }}>
+          {regla.puntos > 0 ? `+${regla.puntos}` : regla.puntos}
+        </span>
+      </label>
+
+      {checked && requiereEvidencia && !disabled && (
+        <div style={{ marginTop: 8, marginLeft: 28 }}>
+          <label
+            className="btn btn-ghost"
+            style={{ fontSize: 12, padding: '6px 10px', display: 'inline-flex' }}
+          >
+            📷 Agregar foto
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => { onAgregarFotos(Array.from(e.target.files)); e.target.value = ''; }}
+            />
+          </label>
+
+          <span
+            className="muted"
+            style={{ fontSize: 12, marginLeft: 8, color: totalFotos === 0 ? 'var(--danger)' : undefined }}
+          >
+            {totalFotos === 0
+              ? 'Falta foto'
+              : `${totalFotos} foto${totalFotos === 1 ? '' : 's'}`}
+          </span>
+
+          {fotosNuevas.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+              {fotosNuevas.map((f, i) => (
+                <span key={i} className="muted" style={{ fontSize: 11, background: 'var(--surface-2)', borderRadius: 8, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {f.name.length > 16 ? `${f.name.slice(0, 13)}…` : f.name}
+                  <button
+                    onClick={() => onQuitarFotoNueva(i)}
+                    style={{ color: 'var(--danger)', fontWeight: 700, lineHeight: 1 }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
