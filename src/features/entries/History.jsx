@@ -22,7 +22,7 @@ export default function History({ profile, onEditarDia }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [seleccionado, setSeleccionado] = useState(null); // { id, fecha }
+  const [seleccionado, setSeleccionado] = useState(null); // { id, fecha, comodinUsado, comidaLibreUsada }
   const [fechaOlvidada, setFechaOlvidada] = useState(hoyISO());
 
   const load = useCallback(async () => {
@@ -47,6 +47,8 @@ export default function History({ profile, onEditarDia }) {
       <DayDetail
         entryId={seleccionado.id}
         fecha={seleccionado.fecha}
+        comodinUsado={seleccionado.comodinUsado}
+        comidaLibreUsada={seleccionado.comidaLibreUsada}
         onBack={() => setSeleccionado(null)}
         onEditar={onEditarDia}
       />
@@ -95,7 +97,10 @@ export default function History({ profile, onEditarDia }) {
             <button
               key={e.id}
               className="card"
-              onClick={() => setSeleccionado({ id: e.id, fecha: e.fecha })}
+              onClick={() => setSeleccionado({
+                id: e.id, fecha: e.fecha,
+                comodinUsado: e.comodin_usado, comidaLibreUsada: e.comida_libre_usada,
+              })}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, padding: '12px 16px',
                 width: '100%', textAlign: 'left',

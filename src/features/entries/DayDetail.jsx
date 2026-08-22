@@ -12,7 +12,7 @@ function formatFecha(fechaISO) {
   return d.toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'long' });
 }
 
-export default function DayDetail({ entryId, fecha, onBack, onEditar }) {
+export default function DayDetail({ entryId, fecha, comodinUsado, comidaLibreUsada, onBack, onEditar }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -53,12 +53,23 @@ export default function DayDetail({ entryId, fecha, onBack, onEditar }) {
         </button>
       )}
 
+      {(comodinUsado || comidaLibreUsada) && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          {comodinUsado && <Etiqueta>Comodín</Etiqueta>}
+          {comidaLibreUsada && <Etiqueta>Comida libre</Etiqueta>}
+        </div>
+      )}
+
       {loading && <p className="muted">Cargando…</p>}
       {error && <p style={{ color: 'var(--danger)', fontSize: 14 }}>{error}</p>}
 
       {!loading && !error && items.length === 0 && (
         <div className="card" style={{ textAlign: 'center' }}>
-          <p className="muted" style={{ margin: 0 }}>No se marcó nada ese día.</p>
+          <p className="muted" style={{ margin: 0 }}>
+            {comodinUsado || comidaLibreUsada
+              ? 'No se marcó ninguna actividad ese día.'
+              : 'No se marcó nada ese día.'}
+          </p>
         </div>
       )}
 
@@ -66,5 +77,16 @@ export default function DayDetail({ entryId, fecha, onBack, onEditar }) {
         <ItemRow key={item.regla_key} descripcion={item.descripcion} puntos={item.puntos} />
       ))}
     </div>
+  );
+}
+
+function Etiqueta({ children }) {
+  return (
+    <span style={{
+      fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 999,
+      background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)',
+    }}>
+      {children}
+    </span>
   );
 }
