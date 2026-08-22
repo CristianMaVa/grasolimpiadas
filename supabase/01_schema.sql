@@ -45,12 +45,18 @@ create table rules (
   -- máximo de registros por día compartido entre TODAS las reglas de
   -- la misma categoría (ej. Bienestar: máx 1 entre meditar / sin pantallas).
   -- null = sin límite de categoría (solo aplica el límite de 1x por regla).
-  limite_categoria_dia smallint
+  limite_categoria_dia smallint,
+  -- etiqueta libre para agrupar reglas mutuamente excluyentes SIN
+  -- importar su categoría (ej. agua: +2L / 1-2L / <1L cruza Hidratación
+  -- y Hábitos). Máx 1 registro por día entre todas las reglas que
+  -- compartan la misma etiqueta. Null = no pertenece a ningún grupo.
+  grupo_exclusivo text
 );
 
 comment on table rules is 'Catálogo de reglas de puntaje. Configurable sin tocar código.';
 comment on column rules.automatica is 'true = la aplica un job por umbral (no aparece en el checklist manual).';
 comment on column rules.limite_categoria_dia is 'Máximo de items marcados por día compartido entre todas las reglas de esta categoría. Null = sin límite de categoría.';
+comment on column rules.grupo_exclusivo is 'Etiqueta libre: máx 1 registro por día entre todas las reglas que comparten la misma etiqueta, sin importar su categoría. Null = no pertenece a ningún grupo exclusivo.';
 
 -- ------------------------------------------------------------
 -- DAILY_ENTRIES · un registro por usuario por día

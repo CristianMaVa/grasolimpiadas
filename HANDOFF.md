@@ -37,6 +37,7 @@ Sin librerías de estado ni de routing por ahora — el switch de vistas es un `
 10. **Ranking: total del reto, no semanal.** Suma acumulada de `puntos_netos` desde el inicio, sin resetear por semana (decisión del dueño, Fase 3).
 11. **Registro incremental, no por lote (revisado post-deploy).** El grupo no marca todo el día de una — van subiendo evidencia según pasan las cosas (ejercicio en la mañana, almuerzo fit al mediodía, etc.). Se reemplazó el checklist-completo-y-un-botón-de-guardar por: elegir UNA actividad de un `<select>`, adjuntar foto si aplica, y registrarla — se guarda al toque, sin botón de "Guardar día". **Cada regla se puede registrar máximo 1 vez por día** (para sumas Y restas, sin excepción — decisión explícita del dueño al preguntar si las restas debían poder repetirse). El selector muestra las ya registradas ese día como opción deshabilitada, no las oculta.
 12. **Límite compartido por categoría (revisado post-deploy).** Bienestar (meditar/journaling/misa/leer y 1h sin pantallas) pasa a máx **1 registro por día entre las dos reglas** — no se pueden sumar puntos por ambas el mismo día, aunque cada una individualmente todavía no esté "ya registrada". Implementado como una columna genérica `rules.limite_categoria_dia` (no hardcodeado a "Bienestar" en el código), así que se puede aplicar a otras categorías después solo cambiando datos, sin tocar `DailyEntry.jsx`. Es un límite de solo cliente (como el máximo de comodines o de comida libre semanal) — no hay trigger de DB que lo garantice; ver §9.
+13. **Grupos exclusivos entre reglas de una misma medida (revisado post-deploy).** Algunas reglas son "buckets" de lo mismo y no se pueden registrar dos a la vez el mismo día: agua (+2L / 1-2L / <1L), horas de sueño (7-8h / 6h / <5h), tragos (1-2 / 3+). A diferencia de §3.12, estas reglas a veces cruzan categorías (agua está en Hidratación Y Hábitos), así que se implementó una etiqueta libre `rules.grupo_exclusivo` (no ligada a `categoria`): máx 1 registro por día entre todas las reglas que comparten la misma etiqueta. Decisiones confirmadas con el dueño: "Trasnochar sin motivo" queda FUERA del grupo de horas de sueño (es sobre el motivo, no la cantidad de horas — puede coexistir con cualquier bucket de horas); "Guayabo" queda FUERA del grupo de tragos (puede pasar con cualquiera de las dos cantidades). Mismo límite de solo cliente que §3.12 — ver §9.
 
 ### Decisiones abiertas menores (confirmar al implementar)
 - Al aplicar comodín retroactivo: se asume recálculo automático del ranking. Confirmar el alcance (¿solo ese día, o cascada sobre bonuses dependientes? No hay bonuses dependientes hoy, así que es directo.)
@@ -66,7 +67,7 @@ Vive en la tabla `rules` (catálogo configurable). NO hardcodear en el frontend 
 | bonus_antes_7am | Bonus | Levantarse antes de 7am | +1 |
 | bonus_sin_azucar | Bonus | Día sin azúcar | +1 |
 
-Bienestar tiene `limite_categoria_dia = 1`: máx 1 de las dos por día, no ambas (§3.12).
+Bienestar tiene `limite_categoria_dia = 1`: máx 1 de las dos por día, no ambas (§3.12). `hidra_2l` y `hidra_1a2l` tienen `grupo_exclusivo = 'agua'` (junto con `rest_agua_menos1l`, abajo); `sueno_7a8` y `sueno_6` tienen `grupo_exclusivo = 'sueno_horas'` (junto con `rest_dormir_menos5`, abajo) — ver §3.13.
 
 ### Resta
 | regla_key | categoría | descripción | pts |
@@ -86,6 +87,8 @@ Bienestar tiene `limite_categoria_dia = 1`: máx 1 de las dos por día, no ambas
 | rest_redes_4h | Disciplina | +4h redes sociales | -2 |
 | rest_agua_menos1l | Hábitos | Menos de 1L de agua | -2 |
 
+Grupos exclusivos (§3.13): `rest_alcohol_1a2`/`rest_alcohol_3mas` comparten `grupo_exclusivo = 'tragos'` (`rest_guayabo` queda fuera); `rest_dormir_menos5` comparte `'sueno_horas'` con `sueno_7a8`/`sueno_6` (`rest_trasnochar` queda fuera); `rest_agua_menos1l` comparte `'agua'` con `hidra_2l`/`hidra_1a2l`.
+
 ### Penalidades (manuales, honor system — antes eran automáticas por umbral, ver §3.8)
 | regla_key | categoría | descripción | pts |
 |---|---|---|---|
@@ -102,7 +105,7 @@ No hay reglas con `automatica = true` en el catálogo actual — todo el reglame
 SQL completo en `supabase/01_schema.sql`. Resumen:
 
 - **users**: `id` (uuid), `nombre`, `avatar_url`, `comodines_restantes` (default 2), `activo` (bool, soft-delete), `created_at`
-- **rules**: `regla_key` (PK text), `categoria`, `descripcion`, `puntos` (smallint), `tipo` (`suma`|`resta`|`especial`), `automatica` (bool), `orden`, `limite_categoria_dia` (smallint, nullable — máx de items marcados por día compartido entre todas las reglas de esa categoría; null = sin límite de categoría)
+- **rules**: `regla_key` (PK text), `categoria`, `descripcion`, `puntos` (smallint), `tipo` (`suma`|`resta`|`especial`), `automatica` (bool), `orden`, `limite_categoria_dia` (smallint, nullable — máx de items marcados por día compartido entre todas las reglas de esa categoría; null = sin límite de categoría), `grupo_exclusivo` (text, nullable — máx 1 registro por día entre todas las reglas que comparten la misma etiqueta, sin importar su categoría; null = no pertenece a ningún grupo exclusivo)
 - **daily_entries**: `id`, `user_id` (FK), `fecha` (date), `puntos_netos` (smallint), `comida_libre_usada` (bool), `comodin_usado` (bool), `created_at`, `updated_at`. Único por `(user_id, fecha)`.
 - **entry_items**: `id`, `entry_id` (FK), `regla_key` (FK), `categoria`, `puntos` (copiado de la regla al marcar), `created_at`. Constraint única `(entry_id, regla_key)` (`supabase/07_entry_items_unique.sql`) — resguardo real de "una regla, una vez por día"; el frontend ya deshabilita la opción en el selector, pero esto lo garantiza a nivel de datos.
 - **evidence**: `id`, `entry_id` (FK), `regla_key` (FK, nullable), `foto_url`, `created_at`. **Tabla sin uso** — la app ya no maneja evidencia fotográfica (§3.3). Se deja en el esquema sin borrar (puede tener filas viejas de cuando sí se usó), pero ningún código actual lee ni escribe en ella.
@@ -134,7 +137,8 @@ grasolimpiadas/
 │   ├── 05_penalidades_manual.sql ← correr quinto (migración: pasa Día perdido / Finde destructivo / No registrar a manuales — solo si tu DB ya tenía el seed viejo)
 │   ├── 06_avatars_storage.sql    ← correr sexto (bucket "avatars" + policies)
 │   ├── 07_entry_items_unique.sql ← correr séptimo (constraint única entry_id+regla_key)
-│   └── 08_limite_categoria_dia.sql ← correr octavo (columna limite_categoria_dia + Bienestar = 1)
+│   ├── 08_limite_categoria_dia.sql ← correr octavo (columna limite_categoria_dia + Bienestar = 1)
+│   └── 09_grupo_exclusivo.sql    ← correr noveno (columna grupo_exclusivo + agua/sueno_horas/tragos)
 └── src/
     ├── main.jsx
     ├── App.jsx                   ← orquesta vistas (select ↔ manage) + tabs (Hoy ↔ Ranking ↔ Historial) + fechaEditar (abrir "Hoy" en una fecha específica desde Historial)
@@ -151,11 +155,11 @@ grasolimpiadas/
         │   └── ManageUsers.jsx   ← gestión de participantes (CRUD + reactivar + subir foto de perfil por participante)
         ├── entries/
         │   ├── pointsEngine.js   ← calcularNeto() — función pura, cap +15, comodín, comida libre
-        │   ├── rulesApi.js       ← listCheckableRules() (excluye automatica=true, incluye limite_categoria_dia)
+        │   ├── rulesApi.js       ← listCheckableRules() (excluye automatica=true, incluye limite_categoria_dia y grupo_exclusivo)
         │   ├── entriesApi.js     ← modelo incremental: registrarActividad (una regla a la vez, sin fotos), actualizarComodin, actualizarComidaLibre, getEntryForDate, getDayDetail, countComidaLibreEnSemana, ajustarComodines. Ya NO existe saveDailyEntry (batch) — se recalcula el neto tras cada acción, no al final. Ya NO toca la tabla/bucket `evidence`.
         │   ├── historyApi.js     ← getHistoryForUser (historial personal)
         │   ├── ItemRow.jsx       ← fila compartida "descripción + puntos" (usada en DailyEntry y DayDetail)
-        │   ├── DailyEntry.jsx    ← selector de actividad + botón "Registrar" que guarda al toque, sin foto; lista "ya registraste hoy"; comodín/comida libre se guardan al toque también. Deshabilita en el selector tanto la regla ya registrada como cualquier otra de su categoría si `limite_categoria_dia` ya se alcanzó. Acepta `fechaInicial` para abrir directo en un día pasado
+        │   ├── DailyEntry.jsx    ← selector de actividad + botón "Registrar" que guarda al toque, sin foto; lista "ya registraste hoy"; comodín/comida libre se guardan al toque también. Deshabilita en el selector la regla ya registrada, cualquier otra de su categoría si `limite_categoria_dia` ya se alcanzó, y cualquier otra de su `grupo_exclusivo` (ej. agua, horas de sueño, tragos) si ya se registró otra del mismo grupo — cada motivo se muestra distinto en el texto de la opción. Acepta `fechaInicial` para abrir directo en un día pasado
         │   ├── History.jsx      ← historial personal: días registrados + total acumulado; selector "¿se te olvidó un día?" para ir a cualquier fecha pasada (con o sin entry); cada día abre DayDetail
         │   └── DayDetail.jsx    ← detalle de solo lectura de un día pasado: qué se marcó (vía ItemRow); botón "Editar este día" → vuelve a Hoy en esa fecha
         └── ranking/
@@ -183,6 +187,8 @@ grasolimpiadas/
 
 **Ajuste post-deploy (ranking en la pantalla de selección de perfil):** se agregó el componente `Ranking` (de `features/ranking/`, sin cambios) directamente en `ProfileSelect.jsx`, debajo de la grilla de perfiles y del botón "Gestionar participantes" — visible para cualquiera que abra la app, sin necesidad de elegir un perfil primero. Reuso directo, sin duplicar lógica: `Ranking` no depende de ningún perfil/sesión, así que se importó tal cual desde `features/users/`. Solo se muestra cuando hay al menos un participante activo (mismo `if` que ya ocultaba la grilla cuando la lista está vacía).
 
+**Ajuste post-deploy (grupos exclusivos entre reglas de una misma medida):** el dueño pidió que ciertas reglas fueran mutuamente excluyentes porque son "buckets" de la misma medida — ejemplo textual: "el agua solo puedes registrar o un litro o 2 litros". Igual con horas de sueño y cantidad de tragos. El mecanismo de §3.12 (`limite_categoria_dia`) no bastaba porque agua cruza dos categorías (Hidratación y Hábitos), así que se agregó una etiqueta libre `rules.grupo_exclusivo` (`supabase/09_grupo_exclusivo.sql`), independiente de `categoria`: máx 1 registro por día entre todas las reglas que comparten la misma etiqueta. Se crearon 3 grupos: `'agua'` (`hidra_2l`, `hidra_1a2l`, `rest_agua_menos1l`), `'sueno_horas'` (`sueno_7a8`, `sueno_6`, `rest_dormir_menos5`), `'tragos'` (`rest_alcohol_1a2`, `rest_alcohol_3mas`). Se confirmó con el dueño ANTES de implementar que `rest_trasnochar` (Trasnochar sin motivo) y `rest_guayabo` (Guayabo) quedan fuera de sus respectivos grupos — ambos son efectos/comportamientos que pueden coexistir con cualquier bucket de la medida principal, no son parte de la medida en sí. `DailyEntry.jsx` agregó `grupoExclusivoConflicto(regla)` (similar en espíritu a `limiteCategoriaAlcanzado`, pero busca coincidencia de `grupo_exclusivo` en vez de `categoria`) — el `<select>` deshabilita la opción y muestra `— ya elegiste "X" hoy` nombrando la regla específica que causó el conflicto (no un mensaje genérico).
+
 Lo que ya funciona:
 - Selección de perfil sin contraseña, persistida en localStorage. El ranking público se muestra ahí mismo, sin elegir perfil.
 - CRUD de participantes con soft-delete y reincorporación.
@@ -197,6 +203,7 @@ Lo que ya funciona:
 - Retroactivo desde Historial: selector de fecha + "Ir" (para días con o sin entry) y botón "Editar este día" en el detalle — ambos abren "Hoy" en esa fecha para marcar/editar cualquier cosa, típicamente Penalidades olvidadas.
 - Foto de perfil real por participante: botón de cámara en "Gestionar participantes" sube a Storage (`avatars`) y actualiza `users.avatar_url`; se muestra en las 4 pantallas que renderizan avatares (selección de perfil, gestión, header de "Hoy", Ranking). Requiere correr `06_avatars_storage.sql`.
 - Límite compartido por categoría (`rules.limite_categoria_dia`): Bienestar (meditar/journaling/misa/leer + 1h sin pantallas) máx 1 registro por día entre las dos. Genérico, no hardcodeado — aplicable a otras categorías solo con datos. Requiere correr `08_limite_categoria_dia.sql`.
+- Grupos exclusivos entre reglas cruzando categorías (`rules.grupo_exclusivo`): agua (+2L / 1-2L / <1L), horas de sueño (7-8h / 6h / <5h), tragos (1-2 / 3+) — máx 1 por día entre las reglas de cada grupo. "Trasnochar" y "Guayabo" quedan fuera de sus grupos (confirmado con el dueño). Requiere correr `09_grupo_exclusivo.sql`.
 - Navegación por tabs (Hoy / Ranking / Historial) dentro de `App.jsx`, sin librería de routing.
 - `npm run build` pasa limpio. Fases 1–4 probadas end-to-end en navegador contra Supabase real (registro incremental actividad por actividad sin foto, con neto actualizándose al toque, selector deshabilitando lo ya registrado, comodín/comida libre guardándose de inmediato, persistencia tras recargar, ranking con resaltado de último, drill-down del historial mostrando el item registrado, penalidad retroactiva agregada a un día sin entry previo desde Historial usando el mismo flujo incremental, foto de perfil subida y persistiendo en las 4 pantallas que la muestran, límite de categoría Bienestar deshabilitando la segunda regla con el motivo correcto y persistiendo tras recargar).
 
@@ -210,7 +217,7 @@ Convenciones observadas en el código actual (mantenerlas):
 - Mensajes de error en español, tono directo, sin "por favor".
 
 Setup local (proyecto Supabase nuevo):
-1. Correr `01_schema.sql`, `02_seed_rules.sql`, `04_ranking_view.sql`, `06_avatars_storage.sql` y `07_entry_items_unique.sql` en orden. `03_storage.sql` (bucket `evidence`) es opcional/legacy — la app ya no maneja evidencia fotográfica (§3.3), así que en una instalación nueva no hace falta correrlo. No corras `05_penalidades_manual.sql` ni `08_limite_categoria_dia.sql` — son solo para DBs que ya tenían el catálogo viejo; `02_seed_rules.sql` ya siembra Penalidades como manuales y Bienestar con su límite de categoría.
+1. Correr `01_schema.sql`, `02_seed_rules.sql`, `04_ranking_view.sql`, `06_avatars_storage.sql` y `07_entry_items_unique.sql` en orden. `03_storage.sql` (bucket `evidence`) es opcional/legacy — la app ya no maneja evidencia fotográfica (§3.3), así que en una instalación nueva no hace falta correrlo. No corras `05_penalidades_manual.sql`, `08_limite_categoria_dia.sql` ni `09_grupo_exclusivo.sql` — son solo para DBs que ya tenían el catálogo viejo; `02_seed_rules.sql` ya siembra Penalidades como manuales, Bienestar con su límite de categoría, y los grupos exclusivos de agua/sueño/tragos.
 2. `cp .env.example .env.local` y llenar `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
 3. `npm install && npm run dev`.
 
@@ -299,6 +306,13 @@ Las penalidades "especiales" (día perdido, finde destructivo, no registrar) ya 
 - Solo se muestra cuando hay al menos un participante activo (mismo `if` que ya condicionaba la grilla). ✅
 - Probado en navegador contra Supabase real: la pantalla de selección muestra el leaderboard completo con el resaltado de último lugar, sin errores de consola. ✅
 
+### Ajuste post-deploy — Grupos exclusivos entre reglas (COMPLETA)
+- Agua (+2L / 1-2L / <1L), horas de sueño (7-8h / 6h / <5h) y tragos (1-2 / 3+): máx 1 registro por día entre las reglas de cada grupo, sin importar su categoría. ✅
+- Nueva etiqueta genérica `rules.grupo_exclusivo` (no ligada a `categoria`, a diferencia de `limite_categoria_dia`) — necesaria porque agua cruza Hidratación y Hábitos. ✅
+- Confirmado con el dueño antes de implementar: "Trasnochar sin motivo" y "Guayabo" quedan FUERA de sus respectivos grupos (son efectos que pueden coexistir con cualquier bucket de la medida principal). ✅
+- `DailyEntry.jsx`: `grupoExclusivoConflicto(regla)` deshabilita en el `<select>` cualquier regla del mismo grupo ya cubierto por otra, mostrando qué regla específica causó el conflicto (`— ya elegiste "X" hoy`). ✅
+- Probado en navegador contra Supabase real: los 3 grupos deshabilitan correctamente sus opciones restantes con el motivo correcto, "Trasnochar" y "Guayabo" siguen disponibles, y persiste tras recargar (verificado a nivel de DOM `disabled: true`). ✅
+
 ### Fase 5 — Pulido (opcional)
 - Copy con el tono de las Grasolimpiadas, animaciones, notificación del último lugar.
 
@@ -309,7 +323,7 @@ Las penalidades "especiales" (día perdido, finde destructivo, no registrar) ya 
 - **RLS:** definir políticas en Supabase. Sin auth real, la anon key da acceso. Para un grupo cerrado puede bastar, pero **no publicar la anon key en un repo público** ni exponer la app abiertamente sin pensar en abuso (alguien podría borrar/editar entries de otros). Opciones: mantener la app privada, o meter una capa mínima de identificación.
 - **Comodín retroactivo + recálculo:** asegurar que el ranking se recalcula de forma consistente y que el contador `comodines_restantes` se decrementa sin condiciones de carrera.
 - **Storage:** bucket `evidence` (`supabase/03_storage.sql`) sin uso — la app ya no maneja evidencia fotográfica (§3.3). El bucket `avatars` (`06_avatars_storage.sql`) sí está en uso activo para fotos de perfil, con las mismas políticas públicas de lectura/inserción. Mismo trade-off que el resto del honor system (acceso abierto, grupo cerrado); revisar si la app deja de ser privada.
-- **Límites de solo cliente:** comodines (máx 2), comida libre (1/semana) y ahora `limite_categoria_dia` (ej. Bienestar) se validan solo en `DailyEntry.jsx`, sin constraint ni trigger de DB. Con la anon key expuesta, alguien podría saltárselos llamando a Supabase directo. Aceptable para un grupo cerrado de honor system, pero si se quiere blindar de verdad haría falta un trigger de Postgres por categoría (más complejo que la constraint única de "una regla, una vez" que sí quedó a nivel de datos — ver `entry_items` en §5).
+- **Límites de solo cliente:** comodines (máx 2), comida libre (1/semana), `limite_categoria_dia` (ej. Bienestar) y `grupo_exclusivo` (agua, sueño, tragos) se validan solo en `DailyEntry.jsx`, sin constraint ni trigger de DB. Con la anon key expuesta, alguien podría saltárselos llamando a Supabase directo. Aceptable para un grupo cerrado de honor system, pero si se quiere blindar de verdad haría falta un trigger de Postgres (más complejo que la constraint única de "una regla, una vez" que sí quedó a nivel de datos — ver `entry_items` en §5).
 
 ---
 
@@ -321,4 +335,4 @@ El reto se llama "Las Grasolimpiadas". Tono competitivo, burlón, motivacional-a
 
 ## Resumen para arrancar rápido
 
-Estás continuando una webapp React+Vite+Supabase de un reto fitness, ya en producción en https://grasolimpiadas.vercel.app. Fases 1 (auth por perfil + CRUD de participantes), 2 (registro diario + motor de puntos), 3 (ranking público + historial), 4 (penalidades manuales, sin jobs) y varios ajustes post-deploy (drill-down del historial, foto de perfil, penalidades retroactivas, registro incremental — una actividad a la vez, se guarda al toque, máximo 1 vez por regla al día —, límite compartido por categoría ej. Bienestar máx 1 entre sus dos reglas, y evidencia fotográfica probada en dos direcciones y finalmente eliminada por completo: el grupo reporta por WhatsApp y lleva puntos en Excel aparte, esta app solo emula el checklist) están listos, compilan y probados end-to-end contra Supabase real. **Lo que queda es la Fase 5: pulido** (opcional — ver §8). Lee §3 (decisiones cerradas, incluye evidencia — ahora ninguna — en §3.3, registro incremental en §3.11 y límite por categoría en §3.12), §4 (reglamento), §5 (modelo de datos) y §7 (motor de puntos) antes de escribir código. No reabras decisiones cerradas sin preguntar — la de evidencia en particular ya se intentó dos veces en direcciones opuestas. Mantén JS plano, español en la UI, y la estructura por features.
+Estás continuando una webapp React+Vite+Supabase de un reto fitness, ya en producción en https://grasolimpiadas.vercel.app. Fases 1 (auth por perfil + CRUD de participantes), 2 (registro diario + motor de puntos), 3 (ranking público + historial), 4 (penalidades manuales, sin jobs) y varios ajustes post-deploy (drill-down del historial, foto de perfil, penalidades retroactivas, registro incremental — una actividad a la vez, se guarda al toque, máximo 1 vez por regla al día —, límite compartido por categoría ej. Bienestar máx 1 entre sus dos reglas, evidencia fotográfica probada en dos direcciones y finalmente eliminada por completo, ranking visible en la pantalla de selección de perfil, y grupos exclusivos entre reglas que cruzan categorías — agua/horas de sueño/tragos, máx 1 por día por grupo) están listos, compilan y probados end-to-end contra Supabase real. **Lo que queda es la Fase 5: pulido** (opcional — ver §8). Lee §3 (decisiones cerradas, incluye evidencia — ahora ninguna — en §3.3, registro incremental en §3.11, límite por categoría en §3.12 y grupos exclusivos en §3.13), §4 (reglamento), §5 (modelo de datos) y §7 (motor de puntos) antes de escribir código. No reabras decisiones cerradas sin preguntar — la de evidencia en particular ya se intentó dos veces en direcciones opuestas. Mantén JS plano, español en la UI, y la estructura por features.

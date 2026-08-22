@@ -103,8 +103,24 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
     return (conteoPorCategoria[regla.categoria] ?? 0) >= regla.limite_categoria_dia;
   }
 
+  // Reglas "bucket" de la misma medida (agua, horas de sueño, tragos)
+  // que cruzan categorías — máx 1 por día entre todas las que
+  // comparten la misma etiqueta `grupo_exclusivo`. Devuelve la regla
+  // ya registrada que choca con `regla`, o null si no hay conflicto.
+  function grupoExclusivoConflicto(regla) {
+    if (!regla || !regla.grupo_exclusivo) return null;
+    if (marcadas.includes(regla.regla_key)) return null; // ya registrada, no es por el grupo
+    return reglas.find((r) => (
+      r.grupo_exclusivo === regla.grupo_exclusivo
+      && r.regla_key !== regla.regla_key
+      && marcadas.includes(r.regla_key)
+    )) ?? null;
+  }
+
   const reglaActual = reglas.find((r) => r.regla_key === reglaSeleccionada) ?? null;
-  const puedeRegistrar = !!reglaActual && !limiteCategoriaAlcanzado(reglaActual);
+  const puedeRegistrar = !!reglaActual
+    && !limiteCategoriaAlcanzado(reglaActual)
+    && !grupoExclusivoConflicto(reglaActual);
 
   const comodinesDisponibles = profile.comodines_restantes ?? 2;
   const puedeActivarComodin = comodinUsado || comodinesDisponibles > 0;
@@ -231,13 +247,16 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
                   {items.map((r) => {
                     const yaHecha = marcadas.includes(r.regla_key);
                     const limiteAlcanzado = !yaHecha && limiteCategoriaAlcanzado(r);
+                    const conflicto = !yaHecha && !limiteAlcanzado ? grupoExclusivoConflicto(r) : null;
                     const motivo = yaHecha
                       ? ' — ya registrada'
                       : limiteAlcanzado
                         ? ` — ya cumpliste el límite de ${categoria} hoy`
-                        : '';
+                        : conflicto
+                          ? ` — ya elegiste "${conflicto.descripcion}" hoy`
+                          : '';
                     return (
-                      <option key={r.regla_key} value={r.regla_key} disabled={yaHecha || limiteAlcanzado}>
+                      <option key={r.regla_key} value={r.regla_key} disabled={yaHecha || limiteAlcanzado || !!conflicto}>
                         {r.descripcion} ({r.puntos > 0 ? `+${r.puntos}` : r.puntos}){motivo}
                       </option>
                     );
