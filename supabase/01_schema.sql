@@ -67,6 +67,10 @@ create table daily_entries (
   user_id            uuid not null references users(id) on delete cascade,
   fecha              date not null,
   puntos_netos       smallint not null default 0,
+  -- mismo cálculo que puntos_netos pero SIN el cap de +15/día a los
+  -- positivos — solo para desempatar el ranking (ver v_ranking), nunca
+  -- se muestra como el "neto del día" real.
+  puntos_netos_sin_limite smallint not null default 0,
   comida_libre_usada boolean not null default false,
   comodin_usado      boolean not null default false,
   created_at         timestamptz not null default now(),
@@ -76,6 +80,7 @@ create table daily_entries (
 
 comment on table daily_entries is 'Un registro por usuario por día. puntos_netos es el resultado del motor de puntos.';
 comment on column daily_entries.comodin_usado is 'Si true, el día queda en 0 (aplicable retroactivamente).';
+comment on column daily_entries.puntos_netos_sin_limite is 'Igual que puntos_netos pero sin el cap de +15/día — solo se usa para desempatar el ranking.';
 
 -- ------------------------------------------------------------
 -- ENTRY_ITEMS · cada acción marcada en un día

@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabase';
-import { calcularNeto } from './pointsEngine';
+import { calcularNeto, calcularNetoSinLimite } from './pointsEngine';
 
 // ============================================================
 // CRUD de registro diario.
@@ -50,8 +50,10 @@ async function ensureEntry(userId, fecha) {
   return creado;
 }
 
-// Recalcula puntos_netos desde TODOS los entry_items vigentes + los
-// flags actuales del entry, y lo persiste. Se llama tras cada acción.
+// Recalcula puntos_netos (y su versión sin el cap de +15, solo para
+// desempatar el ranking — ver v_ranking) desde TODOS los entry_items
+// vigentes + los flags actuales del entry, y lo persiste. Se llama
+// tras cada acción.
 async function recalcularNeto(entryId) {
   const { data: entry, error: entryError } = await supabase
     .from('daily_entries')
@@ -66,14 +68,13 @@ async function recalcularNeto(entryId) {
     .eq('entry_id', entryId);
   if (itemsError) throw itemsError;
 
-  const puntosNetos = calcularNeto(items, {
-    comodinUsado: entry.comodin_usado,
-    comidaLibreUsada: entry.comida_libre_usada,
-  });
+  const opts = { comodinUsado: entry.comodin_usado, comidaLibreUsada: entry.comida_libre_usada };
+  const puntosNetos = calcularNeto(items, opts);
+  const puntosNetosSinLimite = calcularNetoSinLimite(items, opts);
 
   const { error: updError } = await supabase
     .from('daily_entries')
-    .update({ puntos_netos: puntosNetos })
+    .update({ puntos_netos: puntosNetos, puntos_netos_sin_limite: puntosNetosSinLimite })
     .eq('id', entryId);
   if (updError) throw updError;
 

@@ -8,6 +8,8 @@
   --accent: #d8442c;
   --accent-soft: #3a1a14;
   --danger: #e24b4a;
+  --success: #34c759;
+  --success-soft: #10331f;
   --radius: 12px;
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }

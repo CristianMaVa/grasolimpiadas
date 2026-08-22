@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getRanking } from './rankingApi';
 import Avatar from '../users/Avatar';
 
@@ -28,9 +28,30 @@ export default function Ranking() {
 
   useEffect(() => { load(); }, [load]);
 
-  const minPuntos = ranking.length > 1
-    ? Math.min(...ranking.map((r) => r.puntos_totales))
-    : null;
+  // El color siempre refleja el signo del valor (verde positivo, rojo
+  // negativo); el último lugar prima en rojo aunque su valor sea 0.
+  function colorPuntos(valor, esUltimo) {
+    if (esUltimo) return 'var(--danger)';
+    if (valor > 0) return 'var(--success)';
+    if (valor < 0) return 'var(--danger)';
+    return 'var(--text)';
+  }
+
+  // Últimos lugares reales: primero el mínimo de puntos_totales, y
+  // ENTRE esos, el mínimo de puntos_totales_sin_limite — el cap de
+  // +15/día hace que los empates en puntos_totales sean comunes, pero
+  // el desempate casi siempre distingue a quién le fue peor.
+  const idsUltimoLugar = useMemo(() => {
+    if (ranking.length <= 1) return new Set();
+    const minPuntos = Math.min(...ranking.map((r) => r.puntos_totales));
+    const entreMinimos = ranking.filter((r) => r.puntos_totales === minPuntos);
+    const minSinLimite = Math.min(...entreMinimos.map((r) => r.puntos_totales_sin_limite));
+    return new Set(
+      entreMinimos
+        .filter((r) => r.puntos_totales_sin_limite === minSinLimite)
+        .map((r) => r.user_id)
+    );
+  }, [ranking]);
 
   return (
     <div>
@@ -44,7 +65,8 @@ export default function Ranking() {
       )}
 
       {!loading && ranking.map((r, i) => {
-        const esUltimo = minPuntos !== null && r.puntos_totales === minPuntos;
+        const esUltimo = idsUltimoLugar.has(r.user_id);
+        const esTop3 = !esUltimo && i < 3;
         return (
           <div
             key={r.user_id}
@@ -52,8 +74,8 @@ export default function Ranking() {
             style={{
               display: 'flex', alignItems: 'center', gap: 12,
               marginBottom: 10,
-              borderColor: esUltimo ? 'var(--danger)' : 'var(--border)',
-              background: esUltimo ? 'var(--accent-soft)' : 'var(--surface)',
+              borderColor: esUltimo ? 'var(--danger)' : esTop3 ? 'var(--success)' : 'var(--border)',
+              background: esUltimo ? 'var(--accent-soft)' : esTop3 ? 'var(--success-soft)' : 'var(--surface)',
             }}
           >
             <span className="muted" style={{ fontSize: 15, fontWeight: 700, width: 22, textAlign: 'center' }}>
@@ -66,11 +88,12 @@ export default function Ranking() {
                 {r.dias_registrados} día{r.dias_registrados === 1 ? '' : 's'} registrado{r.dias_registrados === 1 ? '' : 's'}
               </div>
             </div>
-            <span style={{
-              fontSize: 18, fontWeight: 700,
-              color: esUltimo ? 'var(--danger)' : 'var(--accent)',
-            }}>
+            <span style={{ fontSize: 18, fontWeight: 700, color: colorPuntos(r.puntos_totales, esUltimo) }}>
               {r.puntos_totales > 0 ? `+${r.puntos_totales}` : r.puntos_totales}
+              {' '}
+              <span style={{ fontSize: 13, fontWeight: 600, color: colorPuntos(r.puntos_totales_sin_limite, esUltimo) }}>
+                ({r.puntos_totales_sin_limite > 0 ? `+${r.puntos_totales_sin_limite}` : r.puntos_totales_sin_limite})
+              </span>
             </span>
             {esUltimo && (
               <span className="muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 }}>
