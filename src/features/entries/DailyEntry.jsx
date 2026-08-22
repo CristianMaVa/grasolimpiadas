@@ -59,6 +59,22 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
   const [guardandoFlag, setGuardandoFlag] = useState(null); // 'comodin' | 'comidaLibre' | null
   const [confirmarEliminar, setConfirmarEliminar] = useState(null); // regla_key pendiente de confirmar, o null
   const [eliminando, setEliminando] = useState(false);
+  const [toast, setToast] = useState(null); // { texto, key, saliendo } | null
+
+  // Confirmación visual tras registrar (una actividad o el checklist
+  // completo) — se desvanece sola. `key` único por toast para que, si
+  // se registra otra cosa mientras el anterior todavía se está
+  // desvaneciendo, los timers viejos no lo pisen.
+  function mostrarToast(texto) {
+    const key = `${Date.now()}-${Math.random()}`;
+    setToast({ texto, key, saliendo: false });
+    window.setTimeout(() => {
+      setToast((actual) => (actual?.key === key ? { ...actual, saliendo: true } : actual));
+    }, 1800);
+    window.setTimeout(() => {
+      setToast((actual) => (actual?.key === key ? null : actual));
+    }, 2300);
+  }
 
   useEffect(() => {
     let alive = true;
@@ -253,6 +269,7 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
       setMarcadas((prev) => [...prev, reglaActual.regla_key]);
       setPuntosNetos(nuevoNeto);
       setReglaSeleccionada('');
+      mostrarToast(`${reglaActual.descripcion} registrada`);
     } catch (e) {
       setError('No se pudo registrar la actividad.');
     } finally {
@@ -274,6 +291,8 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
       setMarcadas((prev) => [...prev, ...seleccionadosChecklist]);
       setPuntosNetos(nuevoNeto);
       setSeleccionadosChecklist([]);
+      const n = reglasElegidas.length;
+      mostrarToast(`${n} actividad${n === 1 ? '' : 'es'} registrada${n === 1 ? '' : 's'}`);
     } catch (e) {
       setError('No se pudieron registrar las actividades.');
     } finally {
@@ -541,6 +560,22 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {toast && (
+        <div
+          style={{
+            position: 'fixed', left: '50%', bottom: 24, transform: 'translateX(-50%)',
+            background: 'var(--success-soft)', border: '1px solid var(--success)',
+            color: 'var(--text)', borderRadius: 999, padding: '10px 18px',
+            fontSize: 14, fontWeight: 600, zIndex: 60,
+            opacity: toast.saliendo ? 0 : 1, transition: 'opacity 0.5s ease',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            maxWidth: '90%', textAlign: 'center',
+          }}
+        >
+          ✓ {toast.texto}
         </div>
       )}
     </div>
