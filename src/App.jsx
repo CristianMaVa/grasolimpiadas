@@ -6,11 +6,14 @@ import Avatar from './features/users/Avatar';
 import DailyEntry from './features/entries/DailyEntry';
 import History from './features/entries/History';
 import Ranking from './features/ranking/Ranking';
+import AdminGate from './features/admin/AdminGate';
+import ManageRules from './features/admin/ManageRules';
 
 // ============================================================
 // App raíz.
 // Vistas: selección de perfil ↔ gestión de participantes ↔
-// registro diario / ranking / historial (Fase 2 y 3).
+// registro diario / ranking / historial (Fase 2 y 3) ↔ módulo
+// administrativo "Gestionar Reto" (tras PIN, ver AdminGate.jsx).
 // ============================================================
 
 const TABS = [
@@ -21,7 +24,7 @@ const TABS = [
 
 export default function App() {
   const { profile, ready, selectProfile, clearProfile, updateProfile } = useProfile();
-  const [view, setView] = useState('select'); // 'select' | 'manage'
+  const [view, setView] = useState('select'); // 'select' | 'manage' | 'admin-gate' | 'admin'
   const [tab, setTab] = useState('hoy'); // 'hoy' | 'ranking' | 'historial'
   const [fechaEditar, setFechaEditar] = useState(null); // fecha a abrir en "Hoy" al venir desde Historial
 
@@ -71,11 +74,18 @@ export default function App() {
   if (view === 'manage') {
     return <ManageUsers onBack={() => setView('select')} />;
   }
+  if (view === 'admin-gate') {
+    return <AdminGate onUnlock={() => setView('admin')} onBack={() => setView('select')} />;
+  }
+  if (view === 'admin') {
+    return <ManageRules onBack={() => setView('select')} />;
+  }
 
   return (
     <ProfileSelect
       onSelect={selectProfile}
       onManage={() => setView('manage')}
+      onAdmin={() => setView('admin-gate')}
     />
   );
 }

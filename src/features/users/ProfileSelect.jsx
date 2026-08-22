@@ -11,7 +11,7 @@ import Ranking from '../ranking/Ranking';
 // perfil, para que el último no pase desapercibido ni un segundo.
 // ============================================================
 
-export default function ProfileSelect({ onSelect, onManage }) {
+export default function ProfileSelect({ onSelect, onManage, onAdmin }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -84,6 +84,14 @@ export default function ProfileSelect({ onSelect, onManage }) {
             onClick={onManage}
           >
             Gestionar participantes
+          </button>
+
+          <button
+            className="btn btn-ghost btn-block"
+            style={{ marginTop: 8 }}
+            onClick={onAdmin}
+          >
+            Gestionar Reto
           </button>
         </>
       )}

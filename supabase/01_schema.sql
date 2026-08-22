@@ -50,7 +50,11 @@ create table rules (
   -- importar su categoría (ej. agua: +2L / 1-2L / <1L cruza Hidratación
   -- y Hábitos). Máx 1 registro por día entre todas las reglas que
   -- compartan la misma etiqueta. Null = no pertenece a ningún grupo.
-  grupo_exclusivo text
+  grupo_exclusivo text,
+  -- false = oculta la regla del checklist sin borrar su historial
+  -- (entry_items ya registrados no dependen de esto). Gestionado
+  -- desde el módulo administrativo (PIN).
+  activo boolean not null default true
 );
 
 comment on table rules is 'Catálogo de reglas de puntaje. Configurable sin tocar código.';
