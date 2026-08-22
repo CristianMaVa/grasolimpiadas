@@ -217,6 +217,8 @@ grasolimpiadas/
 
 **Ajuste post-deploy (detalle del historial también muestra Comodín/Comida libre):** al validar en navegador (contra Supabase real, usuario "Pruebas") que el registro de Comodín y Comida libre funcionara — cap forzado a 0, contador de comodines, exención de restas de Alimentación, límite semanal — se encontró que `DayDetail.jsx` (drill-down del historial) no mostraba esos flags: un día donde solo se activó Comodín o Comida libre (sin ninguna actividad marcada) decía "No se marcó nada ese día", que es confuso porque sí se marcó algo. `History.jsx` ya traía `comodin_usado`/`comida_libre_usada` por día (los usa para la etiqueta en la lista) — se pasan ahora también a `DayDetail.jsx` como props (`comodinUsado`, `comidaLibreUsada`) en vez de pedirlos de nuevo. `DayDetail.jsx` los muestra como etiquetas (mismo estilo pill) arriba de la lista de items, y el mensaje de "vacío" cambia a "No se marcó ninguna actividad ese día" cuando alguno de los dos flags está activo, para no sonar contradictorio.
 
+**Ajuste post-deploy (fecha amigable en el selector de "Hoy"):** el dueño pidió que el selector de fecha de `DailyEntry.jsx` mostrara un formato legible como el de la lista del Historial ("Sáb, 22 Ago") en vez del formato crudo del `<input type="date">` nativo (`08/22/2026`). Un `<input type="date">` no permite mostrar texto propio dentro de sí mismo — el navegador controla ese render por completo. Solución: el input real queda invisible (`opacity: 0`, `position: absolute`, cubriendo toda la tarjeta) pero sigue recibiendo el toque/click y abriendo el selector nativo normalmente; encima se muestra un `<div>` con estilo `.input` con el texto formateado vía `formatFechaAmigable()` (mismo `toLocaleDateString('es-ES', {weekday:'short', day:'2-digit', month:'short'})` que ya usaba `History.jsx`, con `textTransform: capitalize`). Al cambiar la fecha en el picker nativo, el `onChange` de siempre actualiza el estado `fecha` y el texto visible se re-renderiza solo. No se tocó el selector de fecha de `History.jsx` ("¿se te olvidó un día?") — el dueño pidió específicamente el de "Hoy"; si se quiere el mismo tratamiento ahí, es la misma técnica.
+
 Lo que ya funciona:
 - Selección de perfil sin contraseña, persistida en localStorage. El ranking público se muestra ahí mismo, sin elegir perfil.
 - CRUD de participantes con soft-delete y reincorporación.
@@ -396,6 +398,12 @@ Las penalidades "especiales" (día perdido, finde destructivo, no registrar) ya 
 - Validación end-to-end en navegador contra Supabase real (usuario "Pruebas"): Comodín fuerza el neto a 0 sin importar los puntos registrados, el contador `comodines_restantes` decrementa/incrementa correctamente (probado hasta agotarlo en 2 días distintos y confirmando que el botón se deshabilita en un tercero), y Comida libre exime las restas de "Alimentación" del cálculo sin borrarlas de la lista, respetando el límite de 1 por semana (probado con dos días de la misma semana). ✅
 - Encontrado durante la validación: `DayDetail.jsx` no mostraba si ese día se había usado Comodín/Comida libre cuando no había ninguna actividad marcada — decía "No se marcó nada ese día", contradictorio. ✅ (corregido)
 - Fix: `History.jsx` pasa `comodinUsado`/`comidaLibreUsada` (que ya traía consigo para la etiqueta de la lista) a `DayDetail.jsx` como props — sin consulta nueva. `DayDetail.jsx` los muestra como etiquetas y ajusta el mensaje de vacío. ✅
+
+### Ajuste post-deploy — Fecha amigable en el selector de "Hoy" (COMPLETA)
+- El selector de fecha de `DailyEntry.jsx` muestra "Sáb, 22 Ago" en vez de `08/22/2026`, igual que la lista del Historial. ✅
+- Técnica: `<input type="date">` real invisible (`opacity: 0`) pero clickeable, superpuesto a un `<div>` con el texto formateado — el navegador no permite reformatear el texto dentro del input nativo. ✅
+- Probado en navegador (desktop y emulación mobile) y forzando el `onChange` del input real vía JS: el texto se actualiza y el día correcto se recarga (neto, items, flags). ✅
+- Solo se tocó el selector de "Hoy" — el de `History.jsx` ("¿se te olvidó un día?") sigue con el formato nativo; misma técnica si se quiere extender ahí.
 
 ### Fase 5 — Pulido (opcional)
 - Copy con el tono de las Grasolimpiadas, animaciones, notificación del último lugar.

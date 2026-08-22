@@ -29,6 +29,15 @@ function hoyISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Mismo formato que la lista del Historial ("Sáb, 22 Ago") — el input
+// nativo no permite mostrar un formato propio dentro de sí mismo, así
+// que se muestra este texto encima y el input real queda invisible
+// pero clickeable debajo, para seguir abriendo el selector nativo.
+function formatFechaAmigable(fechaISO) {
+  const d = new Date(`${fechaISO}T00:00:00`);
+  return d.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: 'short' });
+}
+
 export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
   const [fecha, setFecha] = useState(fechaInicial || hoyISO());
   const [reglas, setReglas] = useState([]);
@@ -274,13 +283,21 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
         <label className="muted" style={{ fontSize: 13, display: 'block', marginBottom: 8 }}>
           Día
         </label>
-        <input
-          type="date"
-          className="input"
-          value={fecha}
-          max={hoyISO()}
-          onChange={(e) => setFecha(e.target.value)}
-        />
+        <div style={{ position: 'relative' }}>
+          <div className="input" style={{ textAlign: 'center', textTransform: 'capitalize', cursor: 'pointer' }}>
+            {formatFechaAmigable(fecha)}
+          </div>
+          <input
+            type="date"
+            value={fecha}
+            max={hoyISO()}
+            onChange={(e) => setFecha(e.target.value)}
+            style={{
+              position: 'absolute', inset: 0, width: '100%', height: '100%',
+              opacity: 0, cursor: 'pointer', border: 'none',
+            }}
+          />
+        </div>
       </div>
 
       {error && <p style={{ color: 'var(--danger)', fontSize: 14 }}>{error}</p>}
