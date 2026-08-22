@@ -152,6 +152,25 @@ export async function registrarActividad({ userId, fecha, regla }) {
   return { entryId: entry.id, puntosNetos };
 }
 
+// Registra VARIAS actividades de una sola vez para user+fecha (modo
+// checklist): crea el entry si no existía, inserta todos los
+// entry_items en un solo insert, y recalcula el neto una vez al final.
+// Igual que registrarActividad, falla si alguna regla ya estaba
+// registrada ese día (constraint única) — el caller no debe ofrecer
+// como seleccionables las que ya están marcadas o en conflicto.
+export async function registrarActividades({ userId, fecha, reglas }) {
+  if (!reglas.length) return { entryId: null, puntosNetos: null };
+  const entry = await ensureEntry(userId, fecha);
+
+  const { error: insError } = await supabase
+    .from('entry_items')
+    .insert(reglas.map((r) => ({ entry_id: entry.id, regla_key: r.regla_key, categoria: r.categoria, puntos: r.puntos })));
+  if (insError) throw insError;
+
+  const puntosNetos = await recalcularNeto(entry.id);
+  return { entryId: entry.id, puntosNetos };
+}
+
 // Activa/desactiva el comodín del día (crea el entry si no existía).
 export async function actualizarComodin(userId, fecha, valor) {
   const entry = await ensureEntry(userId, fecha);
