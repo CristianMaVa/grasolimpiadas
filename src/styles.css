@@ -75,6 +75,19 @@ input {
 }
 .input:focus { border-color: var(--accent); }
 
+/* iOS Safari renderiza <input type="date"> con su propio control nativo
+   e ignora buena parte del box model normal, dejándolo desalineado y
+   más alto que el resto de los inputs. -webkit-appearance: none +
+   color-scheme: dark lo devuelve a un tamaño consistente con el resto
+   del formulario y en tema oscuro; text-align centra el valor. */
+input[type="date"].input {
+  -webkit-appearance: none;
+  appearance: none;
+  color-scheme: dark;
+  text-align: center;
+  min-height: 46px;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
