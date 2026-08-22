@@ -41,11 +41,16 @@ create table rules (
   -- las reglas "especial" se aplican por umbral automático (job),
   -- no las marca el usuario manualmente en el checklist
   automatica  boolean not null default false,
-  orden       smallint not null default 0
+  orden       smallint not null default 0,
+  -- máximo de registros por día compartido entre TODAS las reglas de
+  -- la misma categoría (ej. Bienestar: máx 1 entre meditar / sin pantallas).
+  -- null = sin límite de categoría (solo aplica el límite de 1x por regla).
+  limite_categoria_dia smallint
 );
 
 comment on table rules is 'Catálogo de reglas de puntaje. Configurable sin tocar código.';
 comment on column rules.automatica is 'true = la aplica un job por umbral (no aparece en el checklist manual).';
+comment on column rules.limite_categoria_dia is 'Máximo de items marcados por día compartido entre todas las reglas de esta categoría. Null = sin límite de categoría.';
 
 -- ------------------------------------------------------------
 -- DAILY_ENTRIES · un registro por usuario por día

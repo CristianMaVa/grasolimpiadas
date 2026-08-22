@@ -6,7 +6,7 @@ import DayDetail from './DayDetail';
 // Historial personal (Fase 3).
 // Días registrados del usuario actual, con el neto de cada uno
 // y el acumulado total. Cada día abre un detalle de solo lectura
-// con lo marcado y la evidencia subida (ver DayDetail.jsx).
+// con lo marcado ese día (ver DayDetail.jsx).
 // ============================================================
 
 function hoyISO() {

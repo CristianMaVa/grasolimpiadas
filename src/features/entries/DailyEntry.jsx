@@ -11,11 +11,12 @@ import ItemRow from './ItemRow';
 // El grupo no registra todo de una vez al final del día, sino
 // de a pocos según pasan las cosas. Por eso esta pantalla ya no
 // es "marcar todo y guardar": es elegir UNA actividad del
-// selector, adjuntar foto si aplica (obligatoria en suma, no en
-// resta), y registrarla — se guarda al toque. Cada regla se
-// puede registrar máximo una vez por día; una vez registrada,
-// el selector la muestra deshabilitada. Editable para el día
-// actual y días pasados (selector de fecha).
+// selector y registrarla — se guarda al toque. Sin evidencia
+// fotográfica: se reporta por el grupo de WhatsApp y los puntos
+// se llevan aparte en Excel, esta app solo emula el checklist.
+// Cada regla se puede registrar máximo una vez por día; una vez
+// registrada, el selector la muestra deshabilitada. Editable
+// para el día actual y días pasados (selector de fecha).
 // ============================================================
 
 function hoyISO() {
@@ -26,7 +27,6 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
   const [fecha, setFecha] = useState(fechaInicial || hoyISO());
   const [reglas, setReglas] = useState([]);
   const [marcadas, setMarcadas] = useState([]);
-  const [evidenciaExistente, setEvidenciaExistente] = useState({}); // { regla_key: [{id, foto_url}] }
   const [comodinUsado, setComodinUsado] = useState(false);
   const [comidaLibreUsada, setComidaLibreUsada] = useState(false);
   const [otrasComidasLibres, setOtrasComidasLibres] = useState(0);
@@ -35,7 +35,6 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
   const [error, setError] = useState(null);
 
   const [reglaSeleccionada, setReglaSeleccionada] = useState('');
-  const [fotosSeleccionadas, setFotosSeleccionadas] = useState([]);
   const [registrando, setRegistrando] = useState(false);
   const [guardandoFlag, setGuardandoFlag] = useState(null); // 'comodin' | 'comidaLibre' | null
 
@@ -56,14 +55,12 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
     setLoading(true);
     setError(null);
     try {
-      const { entry, reglaKeys, evidenciaPorRegla } = await getEntryForDate(profile.id, fecha);
+      const { entry, reglaKeys } = await getEntryForDate(profile.id, fecha);
       setMarcadas(reglaKeys);
-      setEvidenciaExistente(evidenciaPorRegla ?? {});
       setComodinUsado(entry?.comodin_usado ?? false);
       setComidaLibreUsada(entry?.comida_libre_usada ?? false);
       setPuntosNetos(entry?.puntos_netos ?? 0);
       setReglaSeleccionada('');
-      setFotosSeleccionadas([]);
       const otras = await countComidaLibreEnSemana(profile.id, fecha, entry?.id ?? null);
       setOtrasComidasLibres(otras);
     } catch (e) {
@@ -86,15 +83,28 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
   }, [reglas]);
 
   const itemsRegistrados = useMemo(
-    () => reglas
-      .filter((r) => marcadas.includes(r.regla_key))
-      .map((r) => ({ ...r, fotos: evidenciaExistente[r.regla_key] ?? [] })),
-    [reglas, marcadas, evidenciaExistente]
+    () => reglas.filter((r) => marcadas.includes(r.regla_key)),
+    [reglas, marcadas]
   );
 
+  // Cuántos items ya registrados hoy hay por categoría — para categorías
+  // con límite compartido (ej. Bienestar: máx 1 entre meditar/sin pantallas).
+  const conteoPorCategoria = useMemo(() => {
+    const mapa = {};
+    for (const r of reglas) {
+      if (marcadas.includes(r.regla_key)) mapa[r.categoria] = (mapa[r.categoria] ?? 0) + 1;
+    }
+    return mapa;
+  }, [reglas, marcadas]);
+
+  function limiteCategoriaAlcanzado(regla) {
+    if (!regla || regla.limite_categoria_dia == null) return false;
+    if (marcadas.includes(regla.regla_key)) return false; // ya registrada, no es por límite
+    return (conteoPorCategoria[regla.categoria] ?? 0) >= regla.limite_categoria_dia;
+  }
+
   const reglaActual = reglas.find((r) => r.regla_key === reglaSeleccionada) ?? null;
-  const requiereEvidencia = reglaActual?.tipo === 'suma';
-  const puedeRegistrar = !!reglaActual && (!requiereEvidencia || fotosSeleccionadas.length > 0);
+  const puedeRegistrar = !!reglaActual && !limiteCategoriaAlcanzado(reglaActual);
 
   const comodinesDisponibles = profile.comodines_restantes ?? 2;
   const puedeActivarComodin = comodinUsado || comodinesDisponibles > 0;
@@ -142,12 +152,10 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
         userId: profile.id,
         fecha,
         regla: reglaActual,
-        fotos: fotosSeleccionadas,
       });
       setMarcadas((prev) => [...prev, reglaActual.regla_key]);
       setPuntosNetos(nuevoNeto);
       setReglaSeleccionada('');
-      setFotosSeleccionadas([]);
     } catch (e) {
       setError('No se pudo registrar la actividad.');
     } finally {
@@ -214,7 +222,7 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
             <select
               className="input"
               value={reglaSeleccionada}
-              onChange={(e) => { setReglaSeleccionada(e.target.value); setFotosSeleccionadas([]); }}
+              onChange={(e) => setReglaSeleccionada(e.target.value)}
               style={{ marginBottom: 10 }}
             >
               <option value="">Elige una actividad…</option>
@@ -222,38 +230,21 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
                 <optgroup key={categoria} label={categoria}>
                   {items.map((r) => {
                     const yaHecha = marcadas.includes(r.regla_key);
+                    const limiteAlcanzado = !yaHecha && limiteCategoriaAlcanzado(r);
+                    const motivo = yaHecha
+                      ? ' — ya registrada'
+                      : limiteAlcanzado
+                        ? ` — ya cumpliste el límite de ${categoria} hoy`
+                        : '';
                     return (
-                      <option key={r.regla_key} value={r.regla_key} disabled={yaHecha}>
-                        {r.descripcion} ({r.puntos > 0 ? `+${r.puntos}` : r.puntos}){yaHecha ? ' — ya registrada' : ''}
+                      <option key={r.regla_key} value={r.regla_key} disabled={yaHecha || limiteAlcanzado}>
+                        {r.descripcion} ({r.puntos > 0 ? `+${r.puntos}` : r.puntos}){motivo}
                       </option>
                     );
                   })}
                 </optgroup>
               ))}
             </select>
-
-            {reglaActual && requiereEvidencia && (
-              <div style={{ marginBottom: 10 }}>
-                <label className="btn btn-ghost" style={{ fontSize: 13, display: 'inline-flex' }}>
-                  📷 {fotosSeleccionadas.length > 0 ? 'Cambiar foto' : 'Subir o tomar foto'}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    style={{ display: 'none' }}
-                    onChange={(e) => { setFotosSeleccionadas(Array.from(e.target.files)); e.target.value = ''; }}
-                  />
-                </label>
-                <span
-                  className="muted"
-                  style={{ fontSize: 12, marginLeft: 8, color: fotosSeleccionadas.length === 0 ? 'var(--danger)' : undefined }}
-                >
-                  {fotosSeleccionadas.length === 0
-                    ? 'Falta foto (obligatoria)'
-                    : `${fotosSeleccionadas.length} foto${fotosSeleccionadas.length === 1 ? '' : 's'} lista${fotosSeleccionadas.length === 1 ? '' : 's'}`}
-                </span>
-              </div>
-            )}
 
             <button
               className="btn btn-primary btn-block"
@@ -276,7 +267,7 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
           )}
 
           {itemsRegistrados.map((item) => (
-            <ItemRow key={item.regla_key} descripcion={item.descripcion} puntos={item.puntos} fotos={item.fotos} />
+            <ItemRow key={item.regla_key} descripcion={item.descripcion} puntos={item.puntos} />
           ))}
         </>
       )}

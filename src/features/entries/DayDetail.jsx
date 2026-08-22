@@ -4,7 +4,7 @@ import ItemRow from './ItemRow';
 
 // ============================================================
 // Detalle de solo lectura de un día del historial: qué se marcó
-// y la evidencia subida para cada item, agrupado por categoría.
+// ese día (la evidencia se reporta por WhatsApp, no en la app).
 // ============================================================
 
 function formatFecha(fechaISO) {
@@ -63,7 +63,7 @@ export default function DayDetail({ entryId, fecha, onBack, onEditar }) {
       )}
 
       {!loading && items.map((item) => (
-        <ItemRow key={item.regla_key} descripcion={item.descripcion} puntos={item.puntos} fotos={item.fotos} />
+        <ItemRow key={item.regla_key} descripcion={item.descripcion} puntos={item.puntos} />
       ))}
     </div>
   );

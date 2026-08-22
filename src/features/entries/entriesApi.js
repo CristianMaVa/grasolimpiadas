@@ -80,9 +80,8 @@ async function recalcularNeto(entryId) {
   return puntosNetos;
 }
 
-// Carga el entry (si existe), las regla_key ya registradas y la
-// evidencia ya subida, agrupada por regla_key — para saber qué
-// actividades ya están hechas hoy y no ofrecerlas de nuevo.
+// Carga el entry (si existe) y las regla_key ya registradas — para
+// saber qué actividades ya están hechas hoy y no ofrecerlas de nuevo.
 export async function getEntryForDate(userId, fecha) {
   const { data: entry, error } = await supabase
     .from('daily_entries')
@@ -92,7 +91,7 @@ export async function getEntryForDate(userId, fecha) {
     .maybeSingle();
 
   if (error) throw error;
-  if (!entry) return { entry: null, reglaKeys: [], evidenciaPorRegla: {} };
+  if (!entry) return { entry: null, reglaKeys: [] };
 
   const { data: items, error: itemsError } = await supabase
     .from('entry_items')
@@ -100,23 +99,11 @@ export async function getEntryForDate(userId, fecha) {
     .eq('entry_id', entry.id);
   if (itemsError) throw itemsError;
 
-  const { data: evidencia, error: evError } = await supabase
-    .from('evidence')
-    .select('id, regla_key, foto_url')
-    .eq('entry_id', entry.id);
-  if (evError) throw evError;
-
-  const evidenciaPorRegla = {};
-  for (const e of evidencia) {
-    if (!e.regla_key) continue;
-    (evidenciaPorRegla[e.regla_key] ??= []).push({ id: e.id, foto_url: e.foto_url });
-  }
-
-  return { entry, reglaKeys: items.map((i) => i.regla_key), evidenciaPorRegla };
+  return { entry, reglaKeys: items.map((i) => i.regla_key) };
 }
 
-// Detalle de solo lectura de un día ya guardado: qué se marcó y qué
-// evidencia se subió para cada item. Para el drill-down del historial.
+// Detalle de solo lectura de un día ya guardado: qué se marcó. Para
+// el drill-down del historial.
 export async function getDayDetail(entryId) {
   const { data: items, error: itemsError } = await supabase
     .from('entry_items')
@@ -124,24 +111,11 @@ export async function getDayDetail(entryId) {
     .eq('entry_id', entryId);
   if (itemsError) throw itemsError;
 
-  const { data: evidencia, error: evError } = await supabase
-    .from('evidence')
-    .select('id, regla_key, foto_url')
-    .eq('entry_id', entryId);
-  if (evError) throw evError;
-
-  const fotosPorRegla = {};
-  for (const e of evidencia) {
-    if (!e.regla_key) continue;
-    (fotosPorRegla[e.regla_key] ??= []).push({ id: e.id, foto_url: e.foto_url });
-  }
-
   return items.map((i) => ({
     regla_key: i.regla_key,
     categoria: i.categoria,
     puntos: i.puntos,
     descripcion: i.rules?.descripcion ?? i.regla_key,
-    fotos: fotosPorRegla[i.regla_key] ?? [],
   }));
 }
 
@@ -161,31 +135,17 @@ export async function countComidaLibreEnSemana(userId, fecha, excludeEntryId = n
 }
 
 // Registra UNA actividad para user+fecha: crea el entry si no existía,
-// inserta el entry_item, sube las fotos (si hay) atadas a esa regla, y
-// recalcula el neto. Falla si la regla ya estaba registrada ese día
-// (constraint única en entry_items) — el caller debe evitar ofrecerla
-// de nuevo en el selector, pero esto es el resguardo real.
-export async function registrarActividad({ userId, fecha, regla, fotos }) {
+// inserta el entry_item, y recalcula el neto. Falla si la regla ya
+// estaba registrada ese día (constraint única en entry_items) — el
+// caller debe evitar ofrecerla de nuevo en el selector, pero esto es
+// el resguardo real.
+export async function registrarActividad({ userId, fecha, regla }) {
   const entry = await ensureEntry(userId, fecha);
 
   const { error: insError } = await supabase
     .from('entry_items')
     .insert({ entry_id: entry.id, regla_key: regla.regla_key, categoria: regla.categoria, puntos: regla.puntos });
   if (insError) throw insError;
-
-  for (let i = 0; i < (fotos?.length ?? 0); i++) {
-    const file = fotos[i];
-    const ext = file.name.split('.').pop();
-    const path = `${userId}/${fecha}-${regla.regla_key}-${Date.now()}-${i}.${ext}`;
-    const { error: uploadError } = await supabase.storage.from('evidence').upload(path, file);
-    if (uploadError) throw uploadError;
-
-    const { data: pub } = supabase.storage.from('evidence').getPublicUrl(path);
-    const { error: evError } = await supabase
-      .from('evidence')
-      .insert({ entry_id: entry.id, regla_key: regla.regla_key, foto_url: pub.publicUrl });
-    if (evError) throw evError;
-  }
 
   const puntosNetos = await recalcularNeto(entry.id);
   return { entryId: entry.id, puntosNetos };

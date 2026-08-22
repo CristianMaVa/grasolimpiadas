@@ -9,7 +9,7 @@ import { supabase } from '../../lib/supabase';
 export async function listCheckableRules() {
   const { data, error } = await supabase
     .from('rules')
-    .select('regla_key, categoria, descripcion, puntos, tipo, orden')
+    .select('regla_key, categoria, descripcion, puntos, tipo, orden, limite_categoria_dia')
     .eq('automatica', false)
     .order('orden', { ascending: true });
 
