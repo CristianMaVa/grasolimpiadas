@@ -147,7 +147,7 @@ grasolimpiadas/
         │   ├── useProfile.js     ← sesión de perfil en localStorage (+ updateProfile para refrescar comodines)
         │   ├── avatarUtils.js    ← iniciales + color estable por nombre (renombrado desde avatar.js — colisionaba con Avatar.jsx en sistemas de archivos insensibles a mayúsculas, ej. macOS)
         │   ├── Avatar.jsx        ← avatar compartido: foto real si `avatar_url` existe, si no el círculo de iniciales
-        │   ├── ProfileSelect.jsx ← pantalla de selección de perfil
+        │   ├── ProfileSelect.jsx ← pantalla de selección de perfil, con el ranking público (`Ranking`, de la feature `ranking/`) debajo — visible sin elegir perfil
         │   └── ManageUsers.jsx   ← gestión de participantes (CRUD + reactivar + subir foto de perfil por participante)
         ├── entries/
         │   ├── pointsEngine.js   ← calcularNeto() — función pura, cap +15, comodín, comida libre
@@ -181,8 +181,10 @@ grasolimpiadas/
 
 **Ajuste post-deploy (se quita toda la evidencia fotográfica):** el dueño simplificó el flujo real: el grupo reporta evidencia por su chat de WhatsApp y lleva los puntos aparte en un Excel — quería que la app solo emulara ese comportamiento (checklist + cálculo de puntos), sin manejar fotos. Se revirtió por completo la evidencia obligatoria del ajuste anterior: `entriesApi.js` — `registrarActividad` perdió el parámetro `fotos` y el loop de subida a Storage; `getEntryForDate` y `getDayDetail` dejaron de consultar la tabla `evidence`. `DailyEntry.jsx` perdió el estado `fotosSeleccionadas`/`evidenciaExistente`, el bloque de UI de foto, y la validación `requiereEvidencia`/`puedeRegistrar` que la exigía. `ItemRow.jsx` se simplificó a solo descripción + puntos (ya no recibe ni renderiza `fotos`). `DayDetail.jsx` sigue mostrando el detalle de un día, ahora sin fotos. La tabla `evidence` y el bucket de Storage del mismo nombre se dejaron intactos en el esquema (nada de borrado duro), simplemente ya no los usa ningún código — pueden tener filas/archivos huérfanos de cuando la evidencia sí existía. Si se quiere reintroducir evidencia en el futuro, **preguntar primero** — ya se probaron dos direcciones distintas y ambas se descartaron.
 
+**Ajuste post-deploy (ranking en la pantalla de selección de perfil):** se agregó el componente `Ranking` (de `features/ranking/`, sin cambios) directamente en `ProfileSelect.jsx`, debajo de la grilla de perfiles y del botón "Gestionar participantes" — visible para cualquiera que abra la app, sin necesidad de elegir un perfil primero. Reuso directo, sin duplicar lógica: `Ranking` no depende de ningún perfil/sesión, así que se importó tal cual desde `features/users/`. Solo se muestra cuando hay al menos un participante activo (mismo `if` que ya ocultaba la grilla cuando la lista está vacía).
+
 Lo que ya funciona:
-- Selección de perfil sin contraseña, persistida en localStorage.
+- Selección de perfil sin contraseña, persistida en localStorage. El ranking público se muestra ahí mismo, sin elegir perfil.
 - CRUD de participantes con soft-delete y reincorporación.
 - Registro diario incremental: elegir una actividad de un selector (agrupado por categoría, lee de `rules` incluyendo "Penalidades"), y "Registrar" — se guarda al toque, sin foto, sin botón de guardado final. Cada regla máximo 1 vez por día (selector la deshabilita una vez registrada). Editable para el día actual y días pasados vía selector de fecha.
 - Motor de puntos (`calcularNeto`): cap +15 solo a positivos, negativos sin piso.
@@ -290,6 +292,12 @@ Las penalidades "especiales" (día perdido, finde destructivo, no registrar) ya 
 - `ItemRow.jsx` simplificado a solo descripción + puntos. ✅
 - Tabla `evidence` y bucket de Storage `evidence` sin borrar (nada de borrado duro) pero sin uso desde ningún código. ✅
 - Probado en navegador contra Supabase real: registrar "Entrenamiento completo" (antes exigía foto) sin ningún paso de foto, detalle del historial sin sección de fotos, sin errores de consola. ✅
+
+### Ajuste post-deploy — Ranking en la pantalla de selección de perfil (COMPLETA)
+- `Ranking` (sin cambios) se agregó a `ProfileSelect.jsx`, debajo de la grilla de perfiles — visible sin elegir perfil primero. ✅
+- Reuso directo, cero lógica nueva — `Ranking` ya era independiente de cualquier sesión/perfil. ✅
+- Solo se muestra cuando hay al menos un participante activo (mismo `if` que ya condicionaba la grilla). ✅
+- Probado en navegador contra Supabase real: la pantalla de selección muestra el leaderboard completo con el resaltado de último lugar, sin errores de consola. ✅
 
 ### Fase 5 — Pulido (opcional)
 - Copy con el tono de las Grasolimpiadas, animaciones, notificación del último lugar.

@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { listActiveUsers } from './usersApi';
 import Avatar from './Avatar';
+import Ranking from '../ranking/Ranking';
 
 // ============================================================
 // Pantalla de selección de perfil.
 // Muestra los participantes activos como botones. Al tocar uno,
 // se entra como ese usuario (honor system, sin contraseña).
+// Debajo, el ranking público — visible sin necesidad de elegir
+// perfil, para que el último no pase desapercibido ni un segundo.
 // ============================================================
 
 export default function ProfileSelect({ onSelect, onManage }) {
@@ -82,6 +85,15 @@ export default function ProfileSelect({ onSelect, onManage }) {
           >
             Gestionar participantes
           </button>
+        </>
+      )}
+
+      {!loading && !error && users.length > 0 && (
+        <>
+          <div className="muted" style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, margin: '28px 0 10px' }}>
+            Ranking
+          </div>
+          <Ranking />
         </>
       )}
     </div>
