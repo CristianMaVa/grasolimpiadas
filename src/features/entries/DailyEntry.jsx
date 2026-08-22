@@ -5,6 +5,7 @@ import {
   registrarActividad, registrarActividades, eliminarActividad,
   actualizarComodin, actualizarComidaLibre, ajustarComodines,
 } from './entriesApi';
+import { getRetoConfig } from '../reto/retoApi';
 import ItemRow from './ItemRow';
 
 // ============================================================
@@ -41,6 +42,7 @@ function formatFechaAmigable(fechaISO) {
 export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
   const [fecha, setFecha] = useState(fechaInicial || hoyISO());
   const [reglas, setReglas] = useState([]);
+  const [retoConfig, setRetoConfig] = useState(null);
   const [entryId, setEntryId] = useState(null);
   const [marcadas, setMarcadas] = useState([]);
   const [comodinUsado, setComodinUsado] = useState(false);
@@ -70,6 +72,26 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
     })();
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const config = await getRetoConfig();
+        if (alive) setRetoConfig(config);
+      } catch (e) {
+        // Silencioso: si falla, el selector de fecha simplemente no
+        // restringe (mismo comportamiento que antes de este ajuste).
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Límites del selector de fecha según el reto configurado (§3.17):
+  // no antes del inicio, no después del fin ni del día de hoy. Sin
+  // config todavía, se comporta como antes (solo tope en hoy).
+  const maxFecha = (retoConfig?.fechaFin && retoConfig.fechaFin < hoyISO()) ? retoConfig.fechaFin : hoyISO();
+  const minFecha = retoConfig?.fechaInicio;
 
   const cargarDia = useCallback(async () => {
     setLoading(true);
@@ -290,7 +312,8 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
           <input
             type="date"
             value={fecha}
-            max={hoyISO()}
+            min={minFecha}
+            max={maxFecha}
             onChange={(e) => setFecha(e.target.value)}
             style={{
               position: 'absolute', inset: 0, width: '100%', height: '100%',

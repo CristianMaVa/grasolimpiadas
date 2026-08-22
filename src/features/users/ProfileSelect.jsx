@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { listActiveUsers } from './usersApi';
+import { getRetoConfig } from '../reto/retoApi';
 import Avatar from './Avatar';
 import Ranking from '../ranking/Ranking';
 
@@ -7,14 +8,52 @@ import Ranking from '../ranking/Ranking';
 // Pantalla de selección de perfil.
 // Muestra los participantes activos como botones. Al tocar uno,
 // se entra como ese usuario (honor system, sin contraseña).
-// Debajo, el ranking público — visible sin necesidad de elegir
-// perfil, para que el último no pase desapercibido ni un segundo.
+// Debajo del header, el letrero de días restantes del reto (si ya
+// se configuraron las fechas desde "Gestionar Reto" — si no, no se
+// muestra nada). Más abajo, el ranking público — visible sin
+// necesidad de elegir perfil, para que el último no pase
+// desapercibido ni un segundo.
 // ============================================================
+
+function hoyISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function diasEntre(desdeISO, hastaISO) {
+  const desde = new Date(`${desdeISO}T00:00:00`);
+  const hasta = new Date(`${hastaISO}T00:00:00`);
+  return Math.round((hasta - desde) / 86400000);
+}
+
+function formatFechaCorta(fechaISO) {
+  const d = new Date(`${fechaISO}T00:00:00`);
+  return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+}
+
+function RetoBanner({ fechaInicio, fechaFin }) {
+  const hoy = hoyISO();
+  const terminado = hoy > fechaFin;
+  const diasRestantes = Math.max(0, diasEntre(hoy, fechaFin));
+
+  return (
+    <div className="card" style={{ textAlign: 'center', marginBottom: 24, borderColor: 'var(--accent)' }}>
+      <div style={{ fontSize: 20, fontWeight: 700 }}>
+        {terminado
+          ? 'Reto finalizado'
+          : `${diasRestantes} día${diasRestantes === 1 ? '' : 's'} restante${diasRestantes === 1 ? '' : 's'}`}
+      </div>
+      <div className="muted" style={{ fontSize: 13, marginTop: 4, textTransform: 'capitalize' }}>
+        {formatFechaCorta(fechaInicio)} – {formatFechaCorta(fechaFin)}
+      </div>
+    </div>
+  );
+}
 
 export default function ProfileSelect({ onSelect, onManage, onAdmin }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [reto, setReto] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -26,6 +65,19 @@ export default function ProfileSelect({ onSelect, onManage, onAdmin }) {
         if (alive) setError('No se pudieron cargar los participantes.');
       } finally {
         if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const config = await getRetoConfig();
+        if (alive) setReto(config);
+      } catch (e) {
+        // Silencioso: sin config todavía, simplemente no se muestra el letrero.
       }
     })();
     return () => { alive = false; };
@@ -45,6 +97,8 @@ export default function ProfileSelect({ onSelect, onManage, onAdmin }) {
           ¿Quién eres, competidor?
         </p>
       </header>
+
+      {reto && <RetoBanner fechaInicio={reto.fechaInicio} fechaFin={reto.fechaFin} />}
 
       {loading && <p className="muted" style={{ textAlign: 'center' }}>Cargando…</p>}
       {error && <p style={{ color: 'var(--danger)', textAlign: 'center' }}>{error}</p>}

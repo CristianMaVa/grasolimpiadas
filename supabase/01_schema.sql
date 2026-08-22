@@ -9,6 +9,7 @@
 drop table if exists evidence cascade;
 drop table if exists entry_items cascade;
 drop table if exists daily_entries cascade;
+drop table if exists reto_config cascade;
 drop table if exists rules cascade;
 drop table if exists users cascade;
 
@@ -61,6 +62,20 @@ comment on table rules is 'Catálogo de reglas de puntaje. Configurable sin toca
 comment on column rules.automatica is 'true = la aplica un job por umbral (no aparece en el checklist manual).';
 comment on column rules.limite_categoria_dia is 'Máximo de items marcados por día compartido entre todas las reglas de esta categoría. Null = sin límite de categoría.';
 comment on column rules.grupo_exclusivo is 'Etiqueta libre: máx 1 registro por día entre todas las reglas que comparten la misma etiqueta, sin importar su categoría. Null = no pertenece a ningún grupo exclusivo.';
+
+-- ------------------------------------------------------------
+-- RETO_CONFIG · fila única (id=1) con las fechas del reto vigente
+-- Editable desde "Gestionar Reto". Vacía = sin restricción de fechas.
+-- ------------------------------------------------------------
+create table reto_config (
+  id smallint primary key default 1,
+  fecha_inicio date not null,
+  fecha_fin date not null,
+  constraint reto_config_singleton check (id = 1),
+  constraint reto_config_rango check (fecha_inicio <= fecha_fin)
+);
+
+comment on table reto_config is 'Fila única (id=1) con las fechas de inicio/fin del reto vigente. Editable desde el módulo administrativo "Gestionar Reto". Vacía = sin restricción de fechas.';
 
 -- ------------------------------------------------------------
 -- DAILY_ENTRIES · un registro por usuario por día
