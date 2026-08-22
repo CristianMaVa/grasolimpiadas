@@ -26,9 +26,9 @@ insert into rules (regla_key, categoria, descripcion, puntos, tipo, automatica, 
 ('sueno_7a8',             'Sueño',       'Dormir 7–8h',                              2, 'suma', false, 40, null, 'sueno_horas'),
 ('sueno_6',               'Sueño',       'Dormir 6h',                                1, 'suma', false, 41, null, 'sueno_horas'),
 
--- Bienestar (máx 1 por día ENTRE las dos — no se pueden sumar ambas)
-('bien_mente',            'Bienestar',   'Meditación / journaling / misa / leer',    2, 'suma', false, 50, 1, null),
-('bien_sin_pantallas',    'Bienestar',   '1h sin pantallas',                         1, 'suma', false, 51, 1, null),
+-- Bienestar (se pueden sumar ambas el mismo día — sin límite de categoría)
+('bien_mente',            'Bienestar',   'Meditación / journaling / misa / leer',    2, 'suma', false, 50, null, null),
+('bien_sin_pantallas',    'Bienestar',   '1h sin pantallas',                         1, 'suma', false, 51, null, null),
 
 -- Bonus (nota: sin rachas; se mantienen los bonus de día)
 ('bonus_antes_7am',       'Bonus',       'Levantarse antes de 7am',                  1, 'suma', false, 60, null, null),

@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { listCheckableRules } from './rulesApi';
 import {
   getEntryForDate, countComidaLibreEnSemana,
-  registrarActividad, registrarActividades, actualizarComodin, actualizarComidaLibre, ajustarComodines,
+  registrarActividad, registrarActividades, eliminarActividad,
+  actualizarComodin, actualizarComidaLibre, ajustarComodines,
 } from './entriesApi';
 import ItemRow from './ItemRow';
 
@@ -31,6 +32,7 @@ function hoyISO() {
 export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
   const [fecha, setFecha] = useState(fechaInicial || hoyISO());
   const [reglas, setReglas] = useState([]);
+  const [entryId, setEntryId] = useState(null);
   const [marcadas, setMarcadas] = useState([]);
   const [comodinUsado, setComodinUsado] = useState(false);
   const [comidaLibreUsada, setComidaLibreUsada] = useState(false);
@@ -44,6 +46,8 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
   const [seleccionadosChecklist, setSeleccionadosChecklist] = useState([]);
   const [registrando, setRegistrando] = useState(false);
   const [guardandoFlag, setGuardandoFlag] = useState(null); // 'comodin' | 'comidaLibre' | null
+  const [confirmarEliminar, setConfirmarEliminar] = useState(null); // regla_key pendiente de confirmar, o null
+  const [eliminando, setEliminando] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -63,12 +67,14 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
     setError(null);
     try {
       const { entry, reglaKeys } = await getEntryForDate(profile.id, fecha);
+      setEntryId(entry?.id ?? null);
       setMarcadas(reglaKeys);
       setComodinUsado(entry?.comodin_usado ?? false);
       setComidaLibreUsada(entry?.comida_libre_usada ?? false);
       setPuntosNetos(entry?.puntos_netos ?? 0);
       setReglaSeleccionada('');
       setSeleccionadosChecklist([]);
+      setConfirmarEliminar(null);
       const otras = await countComidaLibreEnSemana(profile.id, fecha, entry?.id ?? null);
       setOtrasComidasLibres(otras);
     } catch (e) {
@@ -243,6 +249,24 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
       setRegistrando(false);
     }
   }
+
+  async function handleEliminarActividad(reglaKey) {
+    if (!entryId) return;
+    setEliminando(true);
+    setError(null);
+    try {
+      const { puntosNetos: nuevoNeto } = await eliminarActividad({ entryId, reglaKey });
+      setMarcadas((prev) => prev.filter((k) => k !== reglaKey));
+      setPuntosNetos(nuevoNeto);
+      setConfirmarEliminar(null);
+    } catch (e) {
+      setError('No se pudo eliminar la actividad.');
+    } finally {
+      setEliminando(false);
+    }
+  }
+
+  const reglaAEliminar = reglas.find((r) => r.regla_key === confirmarEliminar) ?? null;
 
   return (
     <div>
@@ -436,9 +460,48 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
           )}
 
           {itemsRegistrados.map((item) => (
-            <ItemRow key={item.regla_key} descripcion={item.descripcion} puntos={item.puntos} />
+            <ItemRow
+              key={item.regla_key}
+              descripcion={item.descripcion}
+              puntos={item.puntos}
+              onEliminar={() => setConfirmarEliminar(item.regla_key)}
+            />
           ))}
         </>
+      )}
+
+      {reglaAEliminar && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20, zIndex: 50,
+          }}
+        >
+          <div className="card" style={{ maxWidth: 340, width: '100%' }}>
+            <p style={{ marginTop: 0 }}>
+              ¿Eliminar <strong>{reglaAEliminar.descripcion}</strong> ({reglaAEliminar.puntos > 0 ? `+${reglaAEliminar.puntos}` : reglaAEliminar.puntos}) de este día?
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                className="btn"
+                style={{ flex: 1 }}
+                onClick={() => setConfirmarEliminar(null)}
+                disabled={eliminando}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn"
+                style={{ flex: 1, background: 'var(--danger)', borderColor: 'var(--danger)', opacity: eliminando ? 0.6 : 1 }}
+                onClick={() => handleEliminarActividad(confirmarEliminar)}
+                disabled={eliminando}
+              >
+                {eliminando ? 'Eliminando…' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

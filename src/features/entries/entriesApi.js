@@ -171,6 +171,22 @@ export async function registrarActividades({ userId, fecha, reglas }) {
   return { entryId: entry.id, puntosNetos };
 }
 
+// Elimina UN item ya registrado de un día (corrección manual, ej. se
+// marcó algo por accidente) y recalcula el neto. No borra el entry en
+// sí aunque quede sin items — solo lo vacía, para no perder los flags
+// de comodín/comida libre si estaban activos ese día.
+export async function eliminarActividad({ entryId, reglaKey }) {
+  const { error } = await supabase
+    .from('entry_items')
+    .delete()
+    .eq('entry_id', entryId)
+    .eq('regla_key', reglaKey);
+  if (error) throw error;
+
+  const puntosNetos = await recalcularNeto(entryId);
+  return { puntosNetos };
+}
+
 // Activa/desactiva el comodín del día (crea el entry si no existía).
 export async function actualizarComodin(userId, fecha, valor) {
   const entry = await ensureEntry(userId, fecha);
