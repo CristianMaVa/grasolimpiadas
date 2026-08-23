@@ -8,9 +8,11 @@ import Avatar from '../users/Avatar';
 // llega acá desde el "Ver más" de FeedPreview en ProfileSelect.jsx
 // (que muestra solo las 5 publicaciones más recientes; esta pantalla
 // trae hasta 50). No es un panel de admin. Muestra "publicaciones"
-// de dos tipos: eliminaciones de items ya registrados, y registros
+// de tres tipos: eliminaciones de items ya registrados, registros
 // guardados en una fecha distinta a la que reportan (cualquier
-// diferencia de día cuenta, sin importar cuántos días).
+// diferencia de día cuenta, sin importar cuántos días), y check-ins
+// pasadas las 11pm en noche de domingo a jueves sin marcar la
+// penalidad "Trasnochar sin motivo" (§3.23).
 // ============================================================
 
 function formatFechaCorta(fechaISO) {
@@ -30,6 +32,19 @@ function formatFechaCorta(fechaISO) {
 function formatFechaCortaEnColombia(fechaISOConHora) {
   const d = new Date(fechaISOConHora);
   return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', timeZone: 'America/Bogota' });
+}
+
+function formatDiaSemana(fechaISO) {
+  const d = new Date(`${fechaISO}T00:00:00`);
+  return d.toLocaleDateString('es-ES', { weekday: 'long' });
+}
+
+// Hora (hh:mm, 24h) en Colombia — para mostrar a qué hora exacta se
+// registró un check-in tardío en la noche (§3.23, trasnocho no
+// declarado).
+function formatHoraColombia(fechaISOConHora) {
+  const d = new Date(fechaISOConHora);
+  return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' });
 }
 
 // "hace X" relativo al momento de la publicación — estética de feed.
@@ -99,10 +114,10 @@ export default function Feed({ onBack }) {
                 style={{
                   marginLeft: 8, fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
                   letterSpacing: 0.5,
-                  color: item.tipo === 'eliminacion' ? 'var(--danger)' : 'var(--accent)',
+                  color: item.tipo === 'registro_tardio' ? 'var(--accent)' : 'var(--danger)',
                 }}
               >
-                {item.tipo === 'eliminacion' ? 'Eliminó' : 'Registro tardío'}
+                {item.tipo === 'eliminacion' ? 'Eliminó' : item.tipo === 'trasnocho_no_declarado' ? 'Trasnochó sin marcar' : 'Registro tardío'}
               </span>
             </div>
             <span className="muted" style={{ fontSize: 12, flexShrink: 0 }}>
@@ -113,6 +128,10 @@ export default function Feed({ onBack }) {
             {item.tipo === 'eliminacion' ? (
               <>
                 Eliminó <strong>{item.descripcion_regla}</strong> ({item.puntos > 0 ? `+${item.puntos}` : item.puntos}) del {formatFechaCorta(item.fecha_actividad)}.
+              </>
+            ) : item.tipo === 'trasnocho_no_declarado' ? (
+              <>
+                Registró su día del <strong>{formatDiaSemana(item.fecha_actividad)} {formatFechaCorta(item.fecha_actividad)}</strong> a las {formatHoraColombia(item.ocurrido_en)}, sin marcar <strong>Trasnochar sin motivo</strong>.
               </>
             ) : (
               <>

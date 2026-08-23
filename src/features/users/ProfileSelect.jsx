@@ -63,10 +63,10 @@ function FeedPreviewRow({ item }) {
         <span
           style={{
             marginLeft: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-            color: item.tipo === 'eliminacion' ? 'var(--danger)' : 'var(--accent)',
+            color: item.tipo === 'registro_tardio' ? 'var(--accent)' : 'var(--danger)',
           }}
         >
-          {item.tipo === 'eliminacion' ? 'Eliminó' : 'Tardío'}
+          {item.tipo === 'eliminacion' ? 'Eliminó' : item.tipo === 'trasnocho_no_declarado' ? 'Trasnochó' : 'Tardío'}
         </span>
         <div
           className="muted"
