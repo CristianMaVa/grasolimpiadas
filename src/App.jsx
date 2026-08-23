@@ -39,8 +39,15 @@ export default function App() {
 
   if (profile) {
     return (
-      <div style={{ paddingTop: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div>
+        <div
+          style={{
+            position: 'sticky', top: 0, zIndex: 40,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: 'var(--bg)', borderBottom: '1px solid var(--border)',
+            paddingTop: 24, paddingBottom: 12, marginBottom: 20,
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <Avatar user={profile} size={36} />
             <div style={{ fontSize: 16, fontWeight: 600 }}>{profile.nombre}</div>
