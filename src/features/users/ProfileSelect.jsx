@@ -142,7 +142,7 @@ function FeedPreview({ onVerMas }) {
 
   return (
     <div className="card" style={{ marginBottom: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>Comportamiento sospechoso</span>
         <button className="btn btn-ghost" style={{ padding: '6px 10px', fontSize: 12 }} onClick={onVerMas}>
           Ver más
