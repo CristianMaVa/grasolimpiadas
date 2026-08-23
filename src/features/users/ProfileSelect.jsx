@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { listActiveUsers } from './usersApi';
+import { listActiveUsers, getPinConfig, verificarPin } from './usersApi';
 import { getRetoConfig } from '../reto/retoApi';
 import Avatar from './Avatar';
 import Ranking from '../ranking/Ranking';
@@ -58,6 +58,12 @@ export default function ProfileSelect({ onSelect, onManage, onAdmin }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reto, setReto] = useState(null);
+  const [pinGlobalHabilitado, setPinGlobalHabilitado] = useState(false);
+
+  const [pinPendiente, setPinPendiente] = useState(null); // usuario esperando PIN, o null
+  const [pinIngresado, setPinIngresado] = useState('');
+  const [verificando, setVerificando] = useState(false);
+  const [pinError, setPinError] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -86,6 +92,65 @@ export default function ProfileSelect({ onSelect, onManage, onAdmin }) {
     })();
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const config = await getPinConfig();
+        if (alive) setPinGlobalHabilitado(config.habilitado);
+      } catch (e) {
+        // Silencioso: si falla, nadie pide PIN (mismo comportamiento que antes).
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Un usuario pide PIN solo si el interruptor global Y el suyo están
+  // activos Y ya tiene un PIN asignado (sin PIN asignado = no se pide,
+  // para no trabar a nadie por un olvido del admin). `tiene_pin` es un
+  // booleano derivado en la DB (pin is not null) — listActiveUsers()
+  // nunca trae el valor real del pin, así que no se puede usar `u.pin`.
+  function requierePin(u) {
+    return pinGlobalHabilitado && u.pin_habilitado && !!u.tiene_pin;
+  }
+
+  function handleElegirPerfil(u) {
+    if (requierePin(u)) {
+      setPinPendiente(u);
+      setPinIngresado('');
+      setPinError(null);
+    } else {
+      onSelect(u);
+    }
+  }
+
+  function cancelarPin() {
+    setPinPendiente(null);
+    setPinIngresado('');
+    setPinError(null);
+  }
+
+  async function confirmarPin() {
+    if (pinIngresado.length !== 4) return;
+    setVerificando(true);
+    setPinError(null);
+    try {
+      const ok = await verificarPin(pinPendiente.id, pinIngresado);
+      if (ok) {
+        onSelect(pinPendiente);
+        setPinPendiente(null);
+        setPinIngresado('');
+      } else {
+        setPinError('PIN incorrecto.');
+        setPinIngresado('');
+      }
+    } catch (e) {
+      setPinError('No se pudo verificar el PIN.');
+    } finally {
+      setVerificando(false);
+    }
+  }
 
   return (
     <div style={{ paddingTop: 40 }}>
@@ -128,7 +193,7 @@ export default function ProfileSelect({ onSelect, onManage, onAdmin }) {
                 key={u.id}
                 className="btn"
                 style={{ justifyContent: 'flex-start', padding: 12 }}
-                onClick={() => onSelect(u)}
+                onClick={() => handleElegirPerfil(u)}
               >
                 <Avatar user={u} size={34} />
                 <span style={{ fontSize: 15 }}>{u.nombre}</span>
@@ -161,6 +226,47 @@ export default function ProfileSelect({ onSelect, onManage, onAdmin }) {
           </div>
           <Ranking />
         </>
+      )}
+
+      {pinPendiente && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20, zIndex: 50,
+          }}
+        >
+          <div className="card" style={{ maxWidth: 320, width: '100%', textAlign: 'center' }}>
+            <p style={{ marginTop: 0 }}>
+              PIN de <strong>{pinPendiente.nombre}</strong>
+            </p>
+            <input
+              className="input"
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={pinIngresado}
+              autoFocus
+              onChange={(e) => { setPinIngresado(e.target.value.replace(/\D/g, '').slice(0, 4)); setPinError(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') confirmarPin(); }}
+              style={{ marginBottom: 10, textAlign: 'center', fontSize: 22, letterSpacing: 8 }}
+            />
+            {pinError && <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: -4, marginBottom: 10 }}>{pinError}</p>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn" style={{ flex: 1 }} onClick={cancelarPin} disabled={verificando}>
+                Cancelar
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1, opacity: verificando || pinIngresado.length !== 4 ? 0.5 : 1 }}
+                onClick={confirmarPin}
+                disabled={verificando || pinIngresado.length !== 4}
+              >
+                {verificando ? 'Verificando…' : 'Entrar'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { listAllRules, crearRegla, actualizarRegla } from './rulesAdminApi';
 import RetoDates from './RetoDates';
+import PinManager from './PinManager';
 
 // ============================================================
 // Gestión de actividades (módulo "Gestionar Reto", tras el PIN).
@@ -131,6 +132,7 @@ export default function ManageRules({ onBack }) {
       {error && <p style={{ color: 'var(--danger)', fontSize: 14 }}>{error}</p>}
 
       <RetoDates />
+      <PinManager />
 
       <div className="card" style={{ marginBottom: 20 }}>
         <label className="muted" style={{ fontSize: 13, display: 'block', marginBottom: 8 }}>

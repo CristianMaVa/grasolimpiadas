@@ -10,6 +10,7 @@ drop table if exists evidence cascade;
 drop table if exists entry_items cascade;
 drop table if exists daily_entries cascade;
 drop table if exists reto_config cascade;
+drop table if exists pin_config cascade;
 drop table if exists rules cascade;
 drop table if exists users cascade;
 
@@ -23,10 +24,34 @@ create table users (
   avatar_url          text,
   comodines_restantes smallint not null default 2 check (comodines_restantes >= 0),
   activo              boolean not null default true,
+  -- PIN de 4 dígitos opcional para proteger el acceso al perfil (ver
+  -- pin_config más abajo para el interruptor global). Null = sin PIN
+  -- asignado. Gestionado desde "Gestionar Reto".
+  pin                 text,
+  pin_habilitado      boolean not null default true,
+  -- Booleano derivado, sin exponer el valor del PIN — lo consulta el
+  -- cliente (ProfileSelect.jsx) para decidir si pedirlo, ya que la
+  -- columna `pin` en sí nunca se trae en esa consulta.
+  tiene_pin           boolean generated always as (pin is not null) stored,
   created_at          timestamptz not null default now()
 );
 
 comment on table users is 'Participantes del reto. Se desactivan con activo=false, nunca se borran.';
+comment on column users.pin is 'PIN de 4 dígitos para proteger el acceso al perfil. Null = sin PIN asignado todavía (no se pide, aunque esté habilitado).';
+comment on column users.tiene_pin is 'true si el usuario ya tiene un PIN asignado (sin revelar su valor) — se usa en ProfileSelect.jsx para decidir si pedirlo.';
+comment on column users.pin_habilitado is 'Si es false, este usuario no pide PIN aunque el interruptor global (pin_config.habilitado) esté activo.';
+
+-- ------------------------------------------------------------
+-- PIN_CONFIG · fila única (id=1): interruptor global del PIN por
+-- perfil. false = nadie pide PIN, sin importar users.pin_habilitado.
+-- ------------------------------------------------------------
+create table pin_config (
+  id smallint primary key default 1,
+  habilitado boolean not null default false,
+  constraint pin_config_singleton check (id = 1)
+);
+
+comment on table pin_config is 'Fila única (id=1): interruptor global del PIN por perfil. Editable desde "Gestionar Reto".';
 
 -- ------------------------------------------------------------
 -- RULES · catálogo configurable del sistema de puntos
