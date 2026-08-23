@@ -26,8 +26,13 @@ import ItemRow from './ItemRow';
 // actual y días pasados (selector de fecha).
 // ============================================================
 
+// Fecha local en formato YYYY-MM-DD. NUNCA usar toISOString() para esto:
+// convierte a UTC, y con zonas horarias negativas (la mayoría de América)
+// cerca de la medianoche local ya es el día siguiente en UTC — el
+// selector de "Hoy" se adelantaba solo un día antes de tiempo.
 function hoyISO() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 // Mismo formato que la lista del Historial ("Sáb, 22 Ago") — el input

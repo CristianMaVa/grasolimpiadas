@@ -18,8 +18,13 @@ function lunesDe(fechaISO) {
   return d;
 }
 
+// Fecha local en formato YYYY-MM-DD. NUNCA usar d.toISOString() para esto:
+// convierte a UTC, y con zonas horarias negativas (la mayoría de América)
+// cerca de la medianoche local ya es el día siguiente en UTC — el día
+// mostrado/registrado se adelantaba solo. Se toman los componentes de
+// fecha locales del objeto Date, no su representación UTC.
 function aISO(d) {
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 // Rango lunes–domingo de la semana que contiene `fechaISO`

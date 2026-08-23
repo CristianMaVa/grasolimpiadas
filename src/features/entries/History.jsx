@@ -9,8 +9,11 @@ import DayDetail from './DayDetail';
 // con lo marcado ese día (ver DayDetail.jsx).
 // ============================================================
 
+// Fecha local en formato YYYY-MM-DD (no toISOString(), que es UTC y se
+// adelanta un día cerca de la medianoche en zonas horarias negativas).
 function hoyISO() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function formatFecha(fechaISO) {
