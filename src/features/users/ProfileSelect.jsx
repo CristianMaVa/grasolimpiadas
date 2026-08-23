@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { listActiveUsers, getPinConfig, verificarPin } from './usersApi';
 import { getRetoConfig } from '../reto/retoApi';
+import { getFeed } from '../feed/feedApi';
 import Avatar from './Avatar';
 import Ranking from '../ranking/Ranking';
 
@@ -10,9 +11,11 @@ import Ranking from '../ranking/Ranking';
 // se entra como ese usuario (honor system, sin contraseña).
 // Debajo del header, el letrero de días restantes del reto (si ya
 // se configuraron las fechas desde "Gestionar Reto" — si no, no se
-// muestra nada). Más abajo, el ranking público — visible sin
-// necesidad de elegir perfil, para que el último no pase
-// desapercibido ni un segundo.
+// muestra nada) y, justo debajo, la vista previa del feed de
+// comportamiento sospechoso (últimas 5 publicaciones, con "Ver más"
+// hacia el feed completo — ver Feed.jsx). Más abajo, el ranking
+// público — visible sin necesidad de elegir perfil, para que el
+// último no pase desapercibido ni un segundo.
 // ============================================================
 
 // Fecha local en formato YYYY-MM-DD (no toISOString(), que es UTC y se
@@ -34,6 +37,145 @@ function formatFechaCorta(fechaISO) {
   return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
 }
 
+// "hace X" relativo — mismo criterio que Feed.jsx (duplicado a
+// propósito, ver convención del proyecto de no crear un util
+// compartido para helpers cortos como este).
+function formatRelativo(fechaISOConHora) {
+  const entonces = new Date(fechaISOConHora);
+  const segundos = Math.floor((Date.now() - entonces.getTime()) / 1000);
+
+  if (segundos < 60) return 'hace un momento';
+  const minutos = Math.floor(segundos / 60);
+  if (minutos < 60) return `hace ${minutos} min`;
+  const horas = Math.floor(minutos / 60);
+  if (horas < 24) return `hace ${horas} h`;
+  const dias = Math.floor(horas / 24);
+  if (dias < 30) return `hace ${dias} día${dias === 1 ? '' : 's'}`;
+  return entonces.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+}
+
+function FeedPreviewRow({ item }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+      <Avatar user={{ nombre: item.nombre, avatar_url: item.avatar_url }} size={26} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>{item.nombre}</span>
+        <span
+          style={{
+            marginLeft: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+            color: item.tipo === 'eliminacion' ? 'var(--danger)' : 'var(--accent)',
+          }}
+        >
+          {item.tipo === 'eliminacion' ? 'Eliminó' : 'Tardío'}
+        </span>
+        <div
+          className="muted"
+          style={{ fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+        >
+          {item.descripcion_regla}
+        </div>
+      </div>
+      <span className="muted" style={{ fontSize: 11, flexShrink: 0 }}>{formatRelativo(item.ocurrido_en)}</span>
+    </div>
+  );
+}
+
+// Puntos indicadores del slider (uno por publicación), estética de
+// carrusel — el activo se pinta con el color de acento.
+function FeedDots({ count, activeIndex }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 10 }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <span
+          key={i}
+          style={{
+            width: 6, height: 6, borderRadius: '50%',
+            background: i === activeIndex ? 'var(--accent)' : 'var(--border)',
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Vista previa del feed de comportamiento sospechoso: slider
+// automático que muestra UNA publicación a la vez (de las 5 más
+// recientes) y avanza sola cada 5s, con puntos de posición debajo —
+// pedido explícito del dueño para que se sienta como un carrusel de
+// notificación bancaria en vez de una lista estática. "Ver más" lleva
+// al feed completo (Feed.jsx). Si falla la carga, no muestra nada —
+// no es crítico para poder elegir perfil.
+function FeedPreview({ onVerMas }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await getFeed(5);
+        if (alive) {
+          setItems(data);
+          setIndex(0);
+        }
+      } catch (e) {
+        // Silencioso.
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (items.length < 2) return;
+    const id = setInterval(() => {
+      setIndex((i) => (i + 1) % items.length);
+    }, 5000);
+    return () => clearInterval(id);
+  }, [items.length]);
+
+  return (
+    <div className="card" style={{ marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 14, fontWeight: 600 }}>Comportamiento sospechoso</span>
+        <button className="btn btn-ghost" style={{ padding: '6px 10px', fontSize: 12 }} onClick={onVerMas}>
+          Ver más
+        </button>
+      </div>
+
+      {loading && <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>Cargando…</p>}
+      {!loading && items.length === 0 && (
+        <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>Nada raro por aquí.</p>
+      )}
+      {!loading && items.length > 0 && (
+        <>
+          {/* Pista con todas las publicaciones en fila; se desliza vía
+              transform en vez de reemplazar el contenido, para que el
+              cambio de slide se vea como un swipe y no como un salto. */}
+          <div style={{ overflow: 'hidden' }}>
+            <div
+              style={{
+                display: 'flex',
+                transform: `translateX(-${index * 100}%)`,
+                transition: 'transform 0.5s ease',
+              }}
+            >
+              {items.map((item) => (
+                <div key={`${item.tipo}-${item.id}`} style={{ flex: '0 0 100%', minWidth: 0 }}>
+                  <FeedPreviewRow item={item} />
+                </div>
+              ))}
+            </div>
+          </div>
+          {items.length > 1 && <FeedDots count={items.length} activeIndex={index} />}
+        </>
+      )}
+    </div>
+  );
+}
+
 function RetoBanner({ fechaInicio, fechaFin }) {
   const hoy = hoyISO();
   const terminado = hoy > fechaFin;
@@ -53,7 +195,7 @@ function RetoBanner({ fechaInicio, fechaFin }) {
   );
 }
 
-export default function ProfileSelect({ onSelect, onManage, onAdmin }) {
+export default function ProfileSelect({ onSelect, onManage, onAdmin, onVerFeed }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -168,6 +310,8 @@ export default function ProfileSelect({ onSelect, onManage, onAdmin }) {
       </header>
 
       {reto && <RetoBanner fechaInicio={reto.fechaInicio} fechaFin={reto.fechaFin} />}
+
+      <FeedPreview onVerMas={onVerFeed} />
 
       {loading && <p className="muted" style={{ textAlign: 'center' }}>Cargando…</p>}
       {error && <p style={{ color: 'var(--danger)', textAlign: 'center' }}>{error}</p>}

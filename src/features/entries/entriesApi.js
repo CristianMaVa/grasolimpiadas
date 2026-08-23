@@ -179,8 +179,36 @@ export async function registrarActividades({ userId, fecha, reglas }) {
 // Elimina UN item ya registrado de un día (corrección manual, ej. se
 // marcó algo por accidente) y recalcula el neto. No borra el entry en
 // sí aunque quede sin items — solo lo vacía, para no perder los flags
-// de comodín/comida libre si estaban activos ese día.
+// de comodín/comida libre si estaban activos ese día. Antes de borrar,
+// deja constancia en `eliminaciones_registradas` (feed de
+// comportamiento sospechoso, visible para todos — ver
+// features/feed/). Es la única acción de la app con esta bitácora;
+// nunca se puede recuperar una eliminación de antes de que existiera.
 export async function eliminarActividad({ entryId, reglaKey }) {
+  const { data: entry, error: entryError } = await supabase
+    .from('daily_entries')
+    .select('user_id, fecha')
+    .eq('id', entryId)
+    .single();
+  if (entryError) throw entryError;
+
+  const { data: item, error: itemError } = await supabase
+    .from('entry_items')
+    .select('regla_key, puntos, rules(descripcion)')
+    .eq('entry_id', entryId)
+    .eq('regla_key', reglaKey)
+    .single();
+  if (itemError) throw itemError;
+
+  const { error: logError } = await supabase.from('eliminaciones_registradas').insert({
+    user_id: entry.user_id,
+    regla_key: item.regla_key,
+    descripcion_regla: item.rules?.descripcion ?? item.regla_key,
+    puntos: item.puntos,
+    fecha_actividad: entry.fecha,
+  });
+  if (logError) throw logError;
+
   const { error } = await supabase
     .from('entry_items')
     .delete()
