@@ -1,17 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { listAllRules, crearRegla, actualizarRegla } from './rulesAdminApi';
-import RetoDates from './RetoDates';
-import PinManager from './PinManager';
 
 // ============================================================
-// Gestión de actividades (módulo "Gestionar Reto", tras el PIN).
-// Activar/desactivar, crear nuevas, ajustar puntos y si suman o
-// restan. Desactivar NO borra la regla — solo la oculta del
-// checklist de registro diario, así no se pierde el historial de
-// quien ya la registró. Editar puntos/tipo tampoco reescribe el
-// pasado: entry_items guarda su propia copia al momento de marcarse.
-// De momento no se gestionan límite por categoría ni grupo
-// exclusivo desde aquí — decisión explícita, se trabaja después.
+// Gestión de actividades (pantalla propia del módulo "Gestionar
+// Reto", tras el PIN — ver AdminHome.jsx). Activar/desactivar, crear
+// nuevas, ajustar puntos y si suman o restan. Desactivar NO borra la
+// regla — solo la oculta del checklist de registro diario, así no se
+// pierde el historial de quien ya la registró. Editar puntos/tipo
+// tampoco reescribe el pasado: entry_items guarda su propia copia al
+// momento de marcarse. De momento no se gestionan límite por
+// categoría ni grupo exclusivo desde aquí — decisión explícita, se
+// trabaja después.
 // ============================================================
 
 export default function ManageRules({ onBack }) {
@@ -126,13 +125,10 @@ export default function ManageRules({ onBack }) {
         <button className="btn btn-ghost" style={{ padding: '8px 12px' }} onClick={onBack}>
           ← Volver
         </button>
-        <h1 style={{ fontSize: 20, margin: 0 }}>Gestionar Reto</h1>
+        <h1 style={{ fontSize: 20, margin: 0 }}>Actividades</h1>
       </div>
 
       {error && <p style={{ color: 'var(--danger)', fontSize: 14 }}>{error}</p>}
-
-      <RetoDates />
-      <PinManager />
 
       <div className="card" style={{ marginBottom: 20 }}>
         <label className="muted" style={{ fontSize: 13, display: 'block', marginBottom: 8 }}>

@@ -7,7 +7,7 @@ import DailyEntry from './features/entries/DailyEntry';
 import History from './features/entries/History';
 import Ranking from './features/ranking/Ranking';
 import AdminGate from './features/admin/AdminGate';
-import ManageRules from './features/admin/ManageRules';
+import AdminHome from './features/admin/AdminHome';
 
 // ============================================================
 // App raíz.
@@ -85,7 +85,7 @@ export default function App() {
     return <AdminGate onUnlock={() => setView('admin')} onBack={() => setView('select')} />;
   }
   if (view === 'admin') {
-    return <ManageRules onBack={() => setView('select')} />;
+    return <AdminHome onBack={() => setView('select')} />;
   }
 
   return (
