@@ -15,7 +15,11 @@ import Ranking from '../ranking/Ranking';
 // comportamiento sospechoso (últimas 5 publicaciones, con "Ver más"
 // hacia el feed completo — ver Feed.jsx). Más abajo, el ranking
 // público — visible sin necesidad de elegir perfil, para que el
-// último no pase desapercibido ni un segundo.
+// último no pase desapercibido ni un segundo. Cada fila del ranking
+// es clickeable: lleva al historial de solo lectura de esa persona,
+// sin PIN (ver `onVerHistorialDe`, manejado en App.jsx con
+// `readOnly` en History.jsx) — el Ranking ya no es una pestaña
+// dentro del perfil, vive únicamente acá.
 // ============================================================
 
 // Fecha local en formato YYYY-MM-DD (no toISOString(), que es UTC y se
@@ -195,7 +199,7 @@ function RetoBanner({ fechaInicio, fechaFin }) {
   );
 }
 
-export default function ProfileSelect({ onSelect, onManage, onAdmin, onVerFeed }) {
+export default function ProfileSelect({ onSelect, onManage, onAdmin, onVerFeed, onVerHistorialDe }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -368,7 +372,7 @@ export default function ProfileSelect({ onSelect, onManage, onAdmin, onVerFeed }
           <div className="muted" style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, margin: '28px 0 10px' }}>
             Ranking
           </div>
-          <Ranking />
+          <Ranking onSelectUser={onVerHistorialDe} />
         </>
       )}
 

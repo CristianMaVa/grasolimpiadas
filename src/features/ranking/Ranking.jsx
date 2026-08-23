@@ -6,9 +6,12 @@ import Avatar from '../users/Avatar';
 // Ranking público (Fase 3).
 // Total acumulado del reto por usuario activo. El último lugar
 // se resalta — es parte del concepto de las Grasolimpiadas.
+// Cada fila es clickeable (onSelectUser) — permite ver el historial
+// de solo lectura de cualquiera, sin PIN (ajuste post-deploy, ver
+// App.jsx / History.jsx `readOnly`).
 // ============================================================
 
-export default function Ranking() {
+export default function Ranking({ onSelectUser }) {
   const [ranking, setRanking] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -68,12 +71,13 @@ export default function Ranking() {
         const esUltimo = idsUltimoLugar.has(r.user_id);
         const esTop3 = !esUltimo && i < 3;
         return (
-          <div
+          <button
             key={r.user_id}
             className="card"
+            onClick={() => onSelectUser && onSelectUser(r)}
             style={{
               display: 'flex', alignItems: 'center', gap: 12,
-              marginBottom: 10,
+              marginBottom: 10, width: '100%', textAlign: 'left',
               borderColor: esUltimo ? 'var(--danger)' : esTop3 ? 'var(--success)' : 'var(--border)',
               background: esUltimo ? 'var(--accent-soft)' : esTop3 ? 'var(--success-soft)' : 'var(--surface)',
             }}
@@ -100,7 +104,7 @@ export default function Ranking() {
                 Último
               </span>
             )}
-          </div>
+          </button>
         );
       })}
     </div>

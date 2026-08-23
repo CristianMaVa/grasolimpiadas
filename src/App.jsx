@@ -5,7 +5,6 @@ import ManageUsers from './features/users/ManageUsers';
 import Avatar from './features/users/Avatar';
 import DailyEntry from './features/entries/DailyEntry';
 import History from './features/entries/History';
-import Ranking from './features/ranking/Ranking';
 import Feed from './features/feed/Feed';
 import AdminGate from './features/admin/AdminGate';
 import AdminHome from './features/admin/AdminHome';
@@ -13,24 +12,28 @@ import AdminHome from './features/admin/AdminHome';
 // ============================================================
 // App raíz.
 // Vistas: selección de perfil ↔ gestión de participantes ↔
-// registro diario / ranking / historial (Fase 2 y 3) ↔ módulo
+// registro diario / historial (Fase 2 y 3) ↔ módulo
 // administrativo "Gestionar Reto" (tras PIN, ver AdminGate.jsx) ↔
 // feed de comportamiento sospechoso (accesible desde la selección de
 // perfil vía "Ver más" en FeedPreview, no una pestaña — ver
-// ProfileSelect.jsx).
+// ProfileSelect.jsx) ↔ historial de solo lectura de CUALQUIER
+// participante, sin PIN (se llega haciendo clic en una fila del
+// Ranking en ProfileSelect.jsx, ver `historial-publico` más abajo).
+// El Ranking ya no es una pestaña propia — vive únicamente en
+// ProfileSelect.jsx, visible sin elegir perfil.
 // ============================================================
 
 const TABS = [
   { key: 'hoy', label: 'Hoy' },
-  { key: 'ranking', label: 'Ranking' },
   { key: 'historial', label: 'Historial' },
 ];
 
 export default function App() {
   const { profile, ready, selectProfile, clearProfile, updateProfile } = useProfile();
-  const [view, setView] = useState('select'); // 'select' | 'manage' | 'admin-gate' | 'admin' | 'feed'
-  const [tab, setTab] = useState('hoy'); // 'hoy' | 'ranking' | 'historial'
+  const [view, setView] = useState('select'); // 'select' | 'manage' | 'admin-gate' | 'admin' | 'feed' | 'historial-publico'
+  const [tab, setTab] = useState('hoy'); // 'hoy' | 'historial'
   const [fechaEditar, setFechaEditar] = useState(null); // fecha a abrir en "Hoy" al venir desde Historial
+  const [historialDe, setHistorialDe] = useState(null); // { id, nombre, avatar_url } del participante cuyo historial público se está viendo
 
   // Abre "Hoy" en una fecha específica (retroactivo: agregar/editar
   // penalidades de un día pasado desde el Historial).
@@ -75,7 +78,6 @@ export default function App() {
         </div>
 
         {tab === 'hoy' && <DailyEntry profile={profile} onUpdateProfile={updateProfile} fechaInicial={fechaEditar} />}
-        {tab === 'ranking' && <Ranking />}
         {tab === 'historial' && <History profile={profile} onEditarDia={irAEditarDia} />}
       </div>
     );
@@ -94,6 +96,15 @@ export default function App() {
   if (view === 'feed') {
     return <Feed onBack={() => setView('select')} />;
   }
+  if (view === 'historial-publico' && historialDe) {
+    return (
+      <History
+        profile={historialDe}
+        readOnly
+        onBack={() => { setView('select'); setHistorialDe(null); }}
+      />
+    );
+  }
 
   return (
     <ProfileSelect
@@ -101,6 +112,10 @@ export default function App() {
       onManage={() => setView('manage')}
       onAdmin={() => setView('admin-gate')}
       onVerFeed={() => setView('feed')}
+      onVerHistorialDe={(u) => {
+        setHistorialDe({ id: u.user_id, nombre: u.nombre, avatar_url: u.avatar_url });
+        setView('historial-publico');
+      }}
     />
   );
 }
