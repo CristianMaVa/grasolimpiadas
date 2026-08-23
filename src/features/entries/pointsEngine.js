@@ -17,11 +17,16 @@ function separarPuntos(items, comidaLibreUsada) {
   return { positivos, negativos };
 }
 
-// Neto real del día: cap de +15 a los positivos, negativos sin piso.
+// Neto real del día: cap de +15 al NETO (positivos + negativos), sin
+// piso hacia abajo. Antes el cap se aplicaba solo a los positivos
+// ANTES de restar (min(positivos,15) + negativos), lo cual subestimaba
+// el neto en días con positivos > 15 y alguna resta — ej. +17/-1 daba
+// 14 en vez de 15. Corregido: se suman positivos y negativos primero
+// (ya lo hace calcularNetoSinLimite) y el cap se aplica al resultado.
 export function calcularNeto(items, { comodinUsado = false, comidaLibreUsada = false } = {}) {
   if (comodinUsado) return 0;
   const { positivos, negativos } = separarPuntos(items, comidaLibreUsada);
-  return Math.min(positivos, 15) + negativos; // cap solo a positivos
+  return Math.min(positivos + negativos, 15);
 }
 
 // Igual que calcularNeto pero SIN el cap de +15/día — se usa únicamente
