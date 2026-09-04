@@ -74,7 +74,12 @@ export default function DayDetail({ entryId, fecha, comodinUsado, comidaLibreUsa
       )}
 
       {!loading && items.map((item) => (
-        <ItemRow key={item.regla_key} descripcion={item.descripcion} puntos={item.puntos} />
+        <ItemRow
+          key={item.regla_key}
+          descripcion={item.descripcion}
+          puntos={item.comodinAplicado ? 0 : item.puntos}
+          subtitulo={item.comodinAplicado ? `Comodín aplicado · antes ${item.puntos}` : undefined}
+        />
       ))}
     </div>
   );

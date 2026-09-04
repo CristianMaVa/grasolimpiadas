@@ -6,8 +6,10 @@ import { calcularNeto, calcularNetoSinLimite } from './pointsEngine';
 // Modelo incremental: cada actividad se registra y persiste al
 // toque (no hay un botón único de "guardar todo el día"). Una
 // regla se registra como máximo una vez por día — ver
-// registrarActividad(). Los flags del día (comodín, comida
-// libre) también se guardan al toque.
+// registrarActividad(). La comida libre es un flag de día
+// completo que se guarda al toque; el comodín, en cambio, se
+// aplica por actividad puntual — ver aplicarComodinAItem() /
+// quitarComodinDeItem() y supabase/20_comodin_por_actividad.sql.
 // ============================================================
 
 function lunesDe(fechaISO) {
@@ -58,28 +60,33 @@ async function ensureEntry(userId, fecha) {
 // Recalcula puntos_netos (y su versión sin el cap de +15, solo para
 // desempatar el ranking — ver v_ranking) desde TODOS los entry_items
 // vigentes + los flags actuales del entry, y lo persiste. Se llama
-// tras cada acción.
+// tras cada acción. También recalcula `comodin_usado` del entry como
+// flag DERIVADO (true si algún item vigente tiene comodin_aplicado) —
+// el comodín ya no es un interruptor de día completo (ver
+// supabase/20_comodin_por_actividad.sql), pero se conserva esta
+// columna para no romper la etiqueta "Comodín" del historial.
 async function recalcularNeto(entryId) {
   const { data: entry, error: entryError } = await supabase
     .from('daily_entries')
-    .select('comodin_usado, comida_libre_usada')
+    .select('comida_libre_usada')
     .eq('id', entryId)
     .single();
   if (entryError) throw entryError;
 
   const { data: items, error: itemsError } = await supabase
     .from('entry_items')
-    .select('categoria, puntos')
+    .select('categoria, puntos, comodin_aplicado')
     .eq('entry_id', entryId);
   if (itemsError) throw itemsError;
 
-  const opts = { comodinUsado: entry.comodin_usado, comidaLibreUsada: entry.comida_libre_usada };
+  const opts = { comidaLibreUsada: entry.comida_libre_usada };
   const puntosNetos = calcularNeto(items, opts);
   const puntosNetosSinLimite = calcularNetoSinLimite(items, opts);
+  const comodinUsado = items.some((i) => i.comodin_aplicado);
 
   const { error: updError } = await supabase
     .from('daily_entries')
-    .update({ puntos_netos: puntosNetos, puntos_netos_sin_limite: puntosNetosSinLimite })
+    .update({ puntos_netos: puntosNetos, puntos_netos_sin_limite: puntosNetosSinLimite, comodin_usado: comodinUsado })
     .eq('id', entryId);
   if (updError) throw updError;
 
@@ -88,6 +95,9 @@ async function recalcularNeto(entryId) {
 
 // Carga el entry (si existe) y las regla_key ya registradas — para
 // saber qué actividades ya están hechas hoy y no ofrecerlas de nuevo.
+// `comodinPorRegla` marca qué regla_key de hoy tiene el comodín
+// aplicado (por item, ver §3.7 revisado) — lo usa DailyEntry.jsx para
+// pintar el estado de cada actividad marcada.
 export async function getEntryForDate(userId, fecha) {
   const { data: entry, error } = await supabase
     .from('daily_entries')
@@ -97,23 +107,31 @@ export async function getEntryForDate(userId, fecha) {
     .maybeSingle();
 
   if (error) throw error;
-  if (!entry) return { entry: null, reglaKeys: [] };
+  if (!entry) return { entry: null, reglaKeys: [], comodinPorRegla: {} };
 
   const { data: items, error: itemsError } = await supabase
     .from('entry_items')
-    .select('regla_key')
+    .select('regla_key, comodin_aplicado')
     .eq('entry_id', entry.id);
   if (itemsError) throw itemsError;
 
-  return { entry, reglaKeys: items.map((i) => i.regla_key) };
+  const comodinPorRegla = {};
+  for (const i of items) {
+    if (i.comodin_aplicado) comodinPorRegla[i.regla_key] = true;
+  }
+
+  return { entry, reglaKeys: items.map((i) => i.regla_key), comodinPorRegla };
 }
 
 // Detalle de solo lectura de un día ya guardado: qué se marcó. Para
-// el drill-down del historial.
+// el drill-down del historial. `comodinAplicado` por item indica si
+// esa actividad puntual fue neutralizada por el comodín — sus puntos
+// originales viajan igual en `puntos` (el historial no los borra),
+// pero DayDetail.jsx los muestra en 0 con un subtítulo.
 export async function getDayDetail(entryId) {
   const { data: items, error: itemsError } = await supabase
     .from('entry_items')
-    .select('regla_key, categoria, puntos, rules(descripcion)')
+    .select('regla_key, categoria, puntos, comodin_aplicado, rules(descripcion)')
     .eq('entry_id', entryId);
   if (itemsError) throw itemsError;
 
@@ -121,6 +139,7 @@ export async function getDayDetail(entryId) {
     regla_key: i.regla_key,
     categoria: i.categoria,
     puntos: i.puntos,
+    comodinAplicado: i.comodin_aplicado,
     descripcion: i.rules?.descripcion ?? i.regla_key,
   }));
 }
@@ -184,6 +203,10 @@ export async function registrarActividades({ userId, fecha, reglas }) {
 // comportamiento sospechoso, visible para todos — ver
 // features/feed/). Es la única acción de la app con esta bitácora;
 // nunca se puede recuperar una eliminación de antes de que existiera.
+// Si el item borrado tenía el comodín aplicado, se le reembolsa al
+// usuario (devuelto en `comodinesRestantes`, null si no aplicaba) —
+// si no, el comodín quedaría consumido sin ninguna actividad que
+// neutralizar.
 export async function eliminarActividad({ entryId, reglaKey }) {
   const { data: entry, error: entryError } = await supabase
     .from('daily_entries')
@@ -194,7 +217,7 @@ export async function eliminarActividad({ entryId, reglaKey }) {
 
   const { data: item, error: itemError } = await supabase
     .from('entry_items')
-    .select('regla_key, puntos, rules(descripcion)')
+    .select('regla_key, puntos, comodin_aplicado, rules(descripcion)')
     .eq('entry_id', entryId)
     .eq('regla_key', reglaKey)
     .single();
@@ -216,17 +239,68 @@ export async function eliminarActividad({ entryId, reglaKey }) {
     .eq('regla_key', reglaKey);
   if (error) throw error;
 
+  let comodinesRestantes = null;
+  if (item.comodin_aplicado) {
+    const userActualizado = await ajustarComodines(entry.user_id, 1);
+    comodinesRestantes = userActualizado.comodines_restantes;
+  }
+
   const puntosNetos = await recalcularNeto(entryId);
-  return { puntosNetos };
+  return { puntosNetos, comodinesRestantes };
 }
 
-// Activa/desactiva el comodín del día (crea el entry si no existía).
-export async function actualizarComodin(userId, fecha, valor) {
-  const entry = await ensureEntry(userId, fecha);
-  const { error } = await supabase.from('daily_entries').update({ comodin_usado: valor }).eq('id', entry.id);
-  if (error) throw error;
-  const puntosNetos = await recalcularNeto(entry.id);
-  return { entryId: entry.id, puntosNetos };
+// Aplica el comodín a UNA actividad puntual ya registrada ese día
+// (revisado — antes era un interruptor de día completo, ver
+// supabase/20_comodin_por_actividad.sql). Solo tiene sentido sobre
+// restas: valida que el item exista, que no reste ya el comodín, y
+// que el usuario todavía tenga comodines disponibles antes de
+// consumir uno. Sus puntos originales quedan intactos en `puntos`
+// (el historial los sigue mostrando, ver DayDetail.jsx) — solo se
+// excluyen del cómputo del neto (pointsEngine.js).
+export async function aplicarComodinAItem({ userId, entryId, reglaKey }) {
+  const { data: user, error: userError } = await supabase
+    .from('users')
+    .select('comodines_restantes')
+    .eq('id', userId)
+    .single();
+  if (userError) throw userError;
+  if (user.comodines_restantes <= 0) throw new Error('No quedan comodines disponibles.');
+
+  const { data: item, error: itemError } = await supabase
+    .from('entry_items')
+    .select('puntos, comodin_aplicado')
+    .eq('entry_id', entryId)
+    .eq('regla_key', reglaKey)
+    .single();
+  if (itemError) throw itemError;
+  if (item.comodin_aplicado) return { puntosNetos: await recalcularNeto(entryId), comodinesRestantes: user.comodines_restantes };
+  if (item.puntos >= 0) throw new Error('El comodín solo se puede usar en actividades que restan puntos.');
+
+  const { error: updError } = await supabase
+    .from('entry_items')
+    .update({ comodin_aplicado: true })
+    .eq('entry_id', entryId)
+    .eq('regla_key', reglaKey);
+  if (updError) throw updError;
+
+  const userActualizado = await ajustarComodines(userId, -1);
+  const puntosNetos = await recalcularNeto(entryId);
+  return { puntosNetos, comodinesRestantes: userActualizado.comodines_restantes };
+}
+
+// Inversa de aplicarComodinAItem: quita el comodín de una actividad y
+// se lo reembolsa al usuario.
+export async function quitarComodinDeItem({ userId, entryId, reglaKey }) {
+  const { error: updError } = await supabase
+    .from('entry_items')
+    .update({ comodin_aplicado: false })
+    .eq('entry_id', entryId)
+    .eq('regla_key', reglaKey);
+  if (updError) throw updError;
+
+  const userActualizado = await ajustarComodines(userId, 1);
+  const puntosNetos = await recalcularNeto(entryId);
+  return { puntosNetos, comodinesRestantes: userActualizado.comodines_restantes };
 }
 
 // Activa/desactiva la comida libre del día (crea el entry si no existía).

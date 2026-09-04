@@ -3,7 +3,7 @@ import { listCheckableRules } from './rulesApi';
 import {
   getEntryForDate, countComidaLibreEnSemana,
   registrarActividad, registrarActividades, eliminarActividad,
-  actualizarComodin, actualizarComidaLibre, ajustarComodines,
+  aplicarComodinAItem, quitarComodinDeItem, actualizarComidaLibre,
 } from './entriesApi';
 import { getRetoConfig } from '../reto/retoApi';
 import ItemRow from './ItemRow';
@@ -50,7 +50,7 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
   const [retoConfig, setRetoConfig] = useState(null);
   const [entryId, setEntryId] = useState(null);
   const [marcadas, setMarcadas] = useState([]);
-  const [comodinUsado, setComodinUsado] = useState(false);
+  const [comodinPorRegla, setComodinPorRegla] = useState({}); // { regla_key: true } — actividades neutralizadas por el comodín ese día
   const [comidaLibreUsada, setComidaLibreUsada] = useState(false);
   const [otrasComidasLibres, setOtrasComidasLibres] = useState(0);
   const [puntosNetos, setPuntosNetos] = useState(0);
@@ -61,7 +61,8 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
   const [reglaSeleccionada, setReglaSeleccionada] = useState('');
   const [seleccionadosChecklist, setSeleccionadosChecklist] = useState([]);
   const [registrando, setRegistrando] = useState(false);
-  const [guardandoFlag, setGuardandoFlag] = useState(null); // 'comodin' | 'comidaLibre' | null
+  const [guardandoFlag, setGuardandoFlag] = useState(null); // 'comidaLibre' | null
+  const [comodinGuardando, setComodinGuardando] = useState(null); // regla_key en vuelo, o null
   const [confirmarEliminar, setConfirmarEliminar] = useState(null); // regla_key pendiente de confirmar, o null
   const [eliminando, setEliminando] = useState(false);
   const [toast, setToast] = useState(null); // { texto, key, saliendo } | null
@@ -118,10 +119,10 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
     setLoading(true);
     setError(null);
     try {
-      const { entry, reglaKeys } = await getEntryForDate(profile.id, fecha);
+      const { entry, reglaKeys, comodinPorRegla: comodinCargado } = await getEntryForDate(profile.id, fecha);
       setEntryId(entry?.id ?? null);
       setMarcadas(reglaKeys);
-      setComodinUsado(entry?.comodin_usado ?? false);
+      setComodinPorRegla(comodinCargado);
       setComidaLibreUsada(entry?.comida_libre_usada ?? false);
       setPuntosNetos(entry?.puntos_netos ?? 0);
       setReglaSeleccionada('');
@@ -225,24 +226,48 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
   }
 
   const comodinesDisponibles = profile.comodines_restantes ?? 2;
-  const puedeActivarComodin = comodinUsado || comodinesDisponibles > 0;
   const puedeActivarComidaLibre = comidaLibreUsada || otrasComidasLibres < 1;
 
-  async function handleToggleComodin() {
-    const nuevoValor = !comodinUsado;
-    setGuardandoFlag('comodin');
+  // Comodín (revisado — antes era un interruptor de día completo, ahora
+  // neutraliza UNA actividad puntual que resta puntos; ver §3.7 del
+  // HANDOFF y supabase/20_comodin_por_actividad.sql). `reglaKey` es la
+  // actividad ya registrada ese día sobre la que se aplica/quita.
+  async function handleAplicarComodin(reglaKey) {
+    if (!entryId || comodinesDisponibles <= 0) return;
+    setComodinGuardando(reglaKey);
     setError(null);
     try {
-      const { puntosNetos: nuevoNeto } = await actualizarComodin(profile.id, fecha, nuevoValor);
-      const delta = nuevoValor ? -1 : 1;
-      const userActualizado = await ajustarComodines(profile.id, delta);
-      onUpdateProfile({ comodines_restantes: userActualizado.comodines_restantes });
-      setComodinUsado(nuevoValor);
+      const { puntosNetos: nuevoNeto, comodinesRestantes } = await aplicarComodinAItem({
+        userId: profile.id, entryId, reglaKey,
+      });
+      setComodinPorRegla((prev) => ({ ...prev, [reglaKey]: true }));
       setPuntosNetos(nuevoNeto);
+      onUpdateProfile({ comodines_restantes: comodinesRestantes });
     } catch (e) {
-      setError('No se pudo actualizar el comodín.');
+      setError('No se pudo aplicar el comodín.');
     } finally {
-      setGuardandoFlag(null);
+      setComodinGuardando(null);
+    }
+  }
+
+  async function handleQuitarComodin(reglaKey) {
+    if (!entryId) return;
+    setComodinGuardando(reglaKey);
+    setError(null);
+    try {
+      const { puntosNetos: nuevoNeto, comodinesRestantes } = await quitarComodinDeItem({
+        userId: profile.id, entryId, reglaKey,
+      });
+      setComodinPorRegla((prev) => {
+        const { [reglaKey]: _quitado, ...resto } = prev;
+        return resto;
+      });
+      setPuntosNetos(nuevoNeto);
+      onUpdateProfile({ comodines_restantes: comodinesRestantes });
+    } catch (e) {
+      setError('No se pudo quitar el comodín.');
+    } finally {
+      setComodinGuardando(null);
     }
   }
 
@@ -310,9 +335,15 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
     setEliminando(true);
     setError(null);
     try {
-      const { puntosNetos: nuevoNeto } = await eliminarActividad({ entryId, reglaKey });
+      const { puntosNetos: nuevoNeto, comodinesRestantes } = await eliminarActividad({ entryId, reglaKey });
       setMarcadas((prev) => prev.filter((k) => k !== reglaKey));
+      setComodinPorRegla((prev) => {
+        if (!prev[reglaKey]) return prev;
+        const { [reglaKey]: _quitado, ...resto } = prev;
+        return resto;
+      });
       setPuntosNetos(nuevoNeto);
+      if (comodinesRestantes !== null) onUpdateProfile({ comodines_restantes: comodinesRestantes });
       setConfirmarEliminar(null);
     } catch (e) {
       setError('No se pudo eliminar la actividad.');
@@ -361,23 +392,15 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
 
           <div className="card" style={{ marginBottom: 16, display: 'flex', gap: 12 }}>
             <Toggle
-              label={`Comodín (${comodinesDisponibles} disponible${comodinesDisponibles === 1 ? '' : 's'})`}
-              activo={comodinUsado}
-              disabled={!puedeActivarComodin || guardandoFlag !== null}
-              onClick={handleToggleComodin}
-            />
-            <Toggle
               label="Comida libre"
               activo={comidaLibreUsada}
               disabled={!puedeActivarComidaLibre || guardandoFlag !== null}
               onClick={handleToggleComidaLibre}
             />
           </div>
-          {comodinUsado && (
-            <p className="muted" style={{ fontSize: 13, marginTop: -8, marginBottom: 16 }}>
-              Comodín activo: el día queda en 0 pts, sin importar lo que registres abajo.
-            </p>
-          )}
+          <p className="muted" style={{ fontSize: 13, marginTop: -8, marginBottom: 16 }}>
+            Comodines disponibles: {comodinesDisponibles}. Se usan desde la actividad que quieras anular, en la lista de abajo.
+          </p>
           {!puedeActivarComidaLibre && (
             <p className="muted" style={{ fontSize: 13, marginTop: -8, marginBottom: 16 }}>
               Ya usaste tu comida libre de la semana.
@@ -523,14 +546,37 @@ export default function DailyEntry({ profile, onUpdateProfile, fechaInicial }) {
             </div>
           )}
 
-          {itemsRegistrados.map((item) => (
-            <ItemRow
-              key={item.regla_key}
-              descripcion={item.descripcion}
-              puntos={item.puntos}
-              onEliminar={() => setConfirmarEliminar(item.regla_key)}
-            />
-          ))}
+          {itemsRegistrados.map((item) => {
+            const comodinAplicado = !!comodinPorRegla[item.regla_key];
+            const esPenalizante = item.puntos < 0;
+            const guardandoEste = comodinGuardando === item.regla_key;
+            return (
+              <ItemRow
+                key={item.regla_key}
+                descripcion={item.descripcion}
+                puntos={comodinAplicado ? 0 : item.puntos}
+                subtitulo={comodinAplicado ? `Comodín aplicado · antes ${item.puntos}` : undefined}
+                onEliminar={() => setConfirmarEliminar(item.regla_key)}
+                extra={
+                  (esPenalizante || comodinAplicado) && (
+                    <button
+                      className="btn"
+                      onClick={() => (comodinAplicado ? handleQuitarComodin(item.regla_key) : handleAplicarComodin(item.regla_key))}
+                      disabled={guardandoEste || (!comodinAplicado && comodinesDisponibles <= 0)}
+                      style={{
+                        padding: '6px 10px', fontSize: 12,
+                        background: comodinAplicado ? 'var(--accent)' : 'var(--surface-2)',
+                        borderColor: comodinAplicado ? 'var(--accent)' : 'var(--border)',
+                        opacity: guardandoEste || (!comodinAplicado && comodinesDisponibles <= 0) ? 0.5 : 1,
+                      }}
+                    >
+                      {guardandoEste ? '…' : comodinAplicado ? 'Quitar comodín' : 'Usar comodín'}
+                    </button>
+                  )
+                }
+              />
+            );
+          })}
         </>
       )}
 
